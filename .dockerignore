@@ -1,0 +1,45 @@
+# Virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Local files
+.env
+.env.*
+!.env.template
+
+# Alembic versions (keep structure)
+alembic/versions/__pycache__/
+
+# Misc
+*.log
+*.tmp

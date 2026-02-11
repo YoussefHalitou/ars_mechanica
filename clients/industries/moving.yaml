@@ -1,0 +1,118 @@
+# Industry Template: Moving Companies (Umzugsunternehmen)
+# This template is used when a new tenant selects the "moving" industry
+
+industry:
+  id: moving
+  name: Umzugsunternehmen
+  icon: truck
+  description: Spezialisiert auf Umzugsdienstleistungen
+
+# Industry-specific modules
+enabled_modules:
+  - projects
+  - employees
+  - time_pairs
+  - materials
+  - services
+  - morningplan
+  - users
+  - feedback
+  - abnahmen        # Completion protocols - essential for moving
+  - vehicle_costs   # Vehicle management - essential for moving
+  - inspections     # Pre-move inspections
+  - revenue
+  - analytics
+
+# Module-specific terminology for this industry
+terminology:
+  project: "Umzug"
+  projects: "Umzüge"
+  inspection: "Besichtigung"
+  abnahme: "Abnahme"
+  employee: "Mitarbeiter"
+  vehicle: "Fahrzeug"
+  material: "Verpackungsmaterial"
+  service: "Dienstleistung"
+  time_pair: "Zeiterfassung"
+  morningplan: "Morgenplan"
+
+# Default services for this industry
+default_services:
+  - name: "Umzug Standard"
+    category: "Umzug"
+    unit: "Stunde"
+  - name: "Umzug Premium"
+    category: "Umzug"
+    unit: "Stunde"
+  - name: "Möbelmontage"
+    category: "Montage"
+    unit: "Stück"
+  - name: "Verpackungsservice"
+    category: "Verpackung"
+    unit: "Karton"
+  - name: "Einlagerung"
+    category: "Lagerung"
+    unit: "m³/Monat"
+  - name: "Klaviertransport"
+    category: "Spezialtransport"
+    unit: "Stück"
+  - name: "Tresorumzug"
+    category: "Spezialtransport"
+    unit: "Stück"
+
+# Default materials for this industry
+default_materials:
+  - name: "Umzugskarton Standard"
+    category: "Kartons"
+    unit: "Stück"
+  - name: "Umzugskarton Bücher"
+    category: "Kartons"
+    unit: "Stück"
+  - name: "Kleiderbox"
+    category: "Kartons"
+    unit: "Stück"
+  - name: "Luftpolsterfolie"
+    category: "Verpackung"
+    unit: "Rolle"
+  - name: "Packpapier"
+    category: "Verpackung"
+    unit: "kg"
+  - name: "Klebeband"
+    category: "Verpackung"
+    unit: "Rolle"
+  - name: "Möbeldecken"
+    category: "Schutz"
+    unit: "Stück"
+  - name: "Spanngurte"
+    category: "Transport"
+    unit: "Stück"
+
+# Industry-specific settings
+settings:
+  default_project_status: "In Planung"
+  require_customer_signature: true
+  require_employee_signature: true
+  track_vehicle_kilometers: true
+  enable_photo_documentation: true
+  default_break_duration_minutes: 30
+
+# Default inspection checklist items
+inspection_checklist:
+  - "Zugang zur Wohnung"
+  - "Aufzug vorhanden"
+  - "Halteverbot notwendig"
+  - "Schwere/sperrige Gegenstände"
+  - "Klaviere/Tresore"
+  - "Kunstgegenstände"
+  - "Pflanzen"
+  - "Demontage erforderlich"
+  - "Besondere Anforderungen"
+
+# Default abnahme checklist items  
+abnahme_checklist:
+  - "Alle Gegenstände transportiert"
+  - "Möbel unbeschädigt"
+  - "Kartons vollständig"
+  - "Wohnung besenrein"
+  - "Schlüssel übergeben"
+  - "Keine Beschädigungen"

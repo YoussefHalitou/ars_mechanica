@@ -1,0 +1,99 @@
+# Industry Template: Electrical Companies (Elektrobetriebe)
+
+industry:
+  id: electrical
+  name: Elektrobetrieb
+  icon: zap
+  description: Elektroinstallation und -service
+
+enabled_modules:
+  - projects
+  - employees
+  - time_pairs
+  - materials
+  - services
+  - morningplan
+  - users
+  - feedback
+  - material_usage
+  - inspections
+  - revenue
+  - analytics
+
+terminology:
+  project: "Auftrag"
+  projects: "Aufträge"
+  inspection: "E-Check"
+  employee: "Elektriker"
+  vehicle: "Servicefahrzeug"
+  material: "Elektromaterial"
+  service: "Leistung"
+  time_pair: "Arbeitsstunden"
+  morningplan: "Tagesplan"
+
+default_services:
+  - name: "Elektrikerstunde"
+    category: "Arbeitszeit"
+    unit: "Stunde"
+  - name: "E-Check"
+    category: "Prüfung"
+    unit: "Pauschal"
+  - name: "Steckdose setzen"
+    category: "Installation"
+    unit: "Stück"
+  - name: "Schalter setzen"
+    category: "Installation"
+    unit: "Stück"
+  - name: "Lampenmontage"
+    category: "Montage"
+    unit: "Stück"
+  - name: "Sicherungskasten"
+    category: "Installation"
+    unit: "Pauschal"
+  - name: "Smart Home Installation"
+    category: "Smart Home"
+    unit: "Pauschal"
+  - name: "Wallbox Installation"
+    category: "E-Mobilität"
+    unit: "Pauschal"
+
+default_materials:
+  - name: "NYM-J 3x1,5"
+    category: "Kabel"
+    unit: "Meter"
+  - name: "NYM-J 3x2,5"
+    category: "Kabel"
+    unit: "Meter"
+  - name: "NYM-J 5x2,5"
+    category: "Kabel"
+    unit: "Meter"
+  - name: "Steckdose UP"
+    category: "Installationsmaterial"
+    unit: "Stück"
+  - name: "Schalter UP"
+    category: "Installationsmaterial"
+    unit: "Stück"
+  - name: "Leerrohre"
+    category: "Installation"
+    unit: "Meter"
+  - name: "Sicherungsautomat"
+    category: "Sicherung"
+    unit: "Stück"
+  - name: "FI-Schalter"
+    category: "Sicherung"
+    unit: "Stück"
+
+settings:
+  default_project_status: "Offen"
+  require_customer_signature: true
+  track_material_usage: true
+  enable_photo_documentation: true
+  require_safety_protocol: true
+
+inspection_checklist:
+  - "Stromversorgung vorhanden"
+  - "Sicherungskasten geprüft"
+  - "Leitungsverlauf dokumentiert"
+  - "Erdung vorhanden"
+  - "Querschnitt ausreichend"
+  - "Brandschutz beachtet"
