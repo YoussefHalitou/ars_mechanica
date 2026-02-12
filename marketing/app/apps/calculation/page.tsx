@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { format } from 'date-fns';
 import {
     Calculator, ChevronDown, Users, Truck, Package, Wrench,
-    TrendingUp, DollarSign, Loader2, Plus, Trash2, Save, FileText, X, Pencil
+    TrendingUp, DollarSign, Loader2, Plus, Trash2, Save, FileText, X, Pencil,
+    AlertCircle, Percent
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -36,6 +37,9 @@ interface RevenueRow {
     id: string; position_label: string; qty: number; unit: string;
     unit_price: number; line_total: number; kind: string; isNew?: boolean;
 }
+interface DiscountRow {
+    discount_id: string; discount_type: string; label: string; value: number; isNew?: boolean;
+}
 
 function calcHours(von: string | null, bis: string | null, pauseMin: number = 0): number {
     if (!von || !bis) return 0;
@@ -57,7 +61,8 @@ export default function CalculationPage() {
     const [vehicles, setVehicles] = useState<VehicleCostRow[]>([]);
     const [services, setServices] = useState<ServiceCostRow[]>([]);
     const [revenue, setRevenue] = useState<RevenueRow[]>([]);
-    const [extraCosts, setExtraCosts] = useState<{ cost_id: string; cost_type: string; description: string; cost: number }[]>([]);
+    const [extraCosts, setExtraCosts] = useState<{ cost_id: string; cost_type: string; description: string; cost: number; isNew?: boolean }[]>([]);
+    const [discounts, setDiscounts] = useState<DiscountRow[]>([]);
 
     // Catalog data for modals
     const [materialCatalog, setMaterialCatalog] = useState<any[]>([]);
@@ -69,6 +74,8 @@ export default function CalculationPage() {
     const [addMatForm, setAddMatForm] = useState({ material_id: '', quantity: 1 });
     const [addVehModal, setAddVehModal] = useState(false);
     const [addVehForm, setAddVehForm] = useState({ vehicle_id: '', usage_type: 'km', usage_value: 0, cost_per_unit: 0, notes: '' });
+    const [addExtraModal, setAddExtraModal] = useState(false);
+    const [addExtraForm, setAddExtraForm] = useState({ cost_type: 'Sonstiges', description: '', cost: 0 });
     const [addSvcModal, setAddSvcModal] = useState(false);
     const [addSvcForm, setAddSvcForm] = useState({ service_id: '', quantity: 1, unit: 'Std', cost_per_unit: 0, supplier: '' });
 
@@ -89,7 +96,7 @@ export default function CalculationPage() {
 
     useEffect(() => {
         if (!selectedProjectId) {
-            setSelectedProject(null); setPersonnel([]); setMaterials([]); setVehicles([]); setServices([]); setRevenue([]); setExtraCosts([]);
+            setSelectedProject(null); setPersonnel([]); setMaterials([]); setVehicles([]); setServices([]); setRevenue([]); setExtraCosts([]); setDiscounts([]);
             return;
         }
         loadProjectData(selectedProjectId);
@@ -104,13 +111,14 @@ export default function CalculationPage() {
         const rateMap: Record<string, { rate: number; role: string | null }> = {};
         (employees || []).forEach(e => { rateMap[e.name] = { rate: e.hourly_rate || 0, role: e.role }; });
 
-        const [tpRes, matRes, vehRes, svcRes, revRes, extRes] = await Promise.all([
+        const [tpRes, matRes, vehRes, svcRes, revRes, extRes, discRes] = await Promise.all([
             supabase.from('t_time_pairs').select('*').eq('project_id', pid).order('datum'),
             supabase.from('t_project_material_usage').select('*, material:t_materials(name, unit), prices:t_material_prices(cost_per_unit, price_per_unit)').eq('project_id', pid),
             supabase.from('t_project_vehicle_costs').select('*, vehicle:t_vehicles(nickname)').eq('project_id', pid),
             supabase.from('t_project_service_usage').select('*, service:t_services(name, default_unit), prices:t_service_prices(cost_per_unit, supplier)').eq('project_id', pid),
             supabase.from('t_project_revenue_items').select('*').eq('project_id', pid).order('sort_order'),
             supabase.from('t_project_costs_extra').select('*').eq('project_id', pid),
+            supabase.from('t_project_discounts').select('*').eq('project_id', pid),
         ]);
 
         setPersonnel((tpRes.data || []).map(tp => {
@@ -154,6 +162,7 @@ export default function CalculationPage() {
         })));
 
         setExtraCosts((extRes.data || []).map(e => ({ cost_id: e.cost_id, cost_type: e.cost_type, description: e.description || '', cost: e.cost })));
+        setDiscounts((discRes.data || []).map((d: any) => ({ discount_id: d.discount_id, discount_type: d.discount_type || 'flat', label: d.label || '', value: d.value || 0 })));
         setLoading(false);
     };
 
@@ -165,8 +174,9 @@ export default function CalculationPage() {
     const serviceKosten = useMemo(() => services.reduce((s, sv) => s + sv.total_cost, 0), [services]);
     const extraKosten = useMemo(() => extraCosts.reduce((s, e) => s + e.cost, 0), [extraCosts]);
     const revenueTotal = useMemo(() => revenue.reduce((s, r) => s + r.line_total, 0), [revenue]);
+    const discountTotal = useMemo(() => discounts.reduce((s, d) => s + d.value, 0), [discounts]);
     const totalCosts = personalKosten + materialKosten + vehicleKosten + serviceKosten + extraKosten;
-    const totalRevenue = revenueTotal + materialErloes;
+    const totalRevenue = revenueTotal + materialErloes - discountTotal;
     const margin = totalRevenue - totalCosts;
     const marginPct = totalRevenue > 0 ? (margin / totalRevenue) * 100 : 0;
 
@@ -231,6 +241,52 @@ export default function CalculationPage() {
         setAddSvcModal(false);
         loadProjectData(selectedProjectId);
     };
+    // ---- EXTRA COSTS CRUD ----
+    const addExtraCost = async () => {
+        if (!selectedProjectId || !addExtraForm.description) return;
+        await supabase.from('t_project_costs_extra').insert({
+            project_id: selectedProjectId, cost_type: addExtraForm.cost_type,
+            description: addExtraForm.description, cost: addExtraForm.cost,
+        });
+        setAddExtraModal(false);
+        loadProjectData(selectedProjectId);
+    };
+    const updateExtraCost = (costId: string, field: string, value: any) => {
+        setExtraCosts(prev => prev.map(e => e.cost_id === costId ? { ...e, [field]: value } : e));
+    };
+    const saveExtraCosts = async () => {
+        for (const e of extraCosts) {
+            await supabase.from('t_project_costs_extra').update({ cost_type: e.cost_type, description: e.description, cost: e.cost }).eq('cost_id', e.cost_id);
+        }
+        loadProjectData(selectedProjectId);
+    };
+    const deleteExtraCost = async (costId: string) => {
+        await supabase.from('t_project_costs_extra').delete().eq('cost_id', costId);
+        loadProjectData(selectedProjectId);
+    };
+
+    // ---- DISCOUNT CRUD ----
+    const addDiscountRow = () => {
+        setDiscounts(prev => [...prev, { discount_id: `temp-${Date.now()}`, discount_type: 'flat', label: '', value: 0, isNew: true }]);
+    };
+    const updateDiscount = (id: string, field: keyof DiscountRow, value: any) => {
+        setDiscounts(prev => prev.map(d => d.discount_id === id ? { ...d, [field]: value } : d));
+    };
+    const saveDiscounts = async () => {
+        if (!selectedProjectId) return;
+        for (const d of discounts) {
+            const record = { project_id: selectedProjectId, discount_type: d.discount_type, label: d.label, value: d.value };
+            if (d.isNew || d.discount_id.startsWith('temp-')) await supabase.from('t_project_discounts').insert(record);
+            else await supabase.from('t_project_discounts').update(record).eq('discount_id', d.discount_id);
+        }
+        loadProjectData(selectedProjectId);
+    };
+    const deleteDiscount = async (id: string) => {
+        if (id.startsWith('temp-')) { setDiscounts(prev => prev.filter(d => d.discount_id !== id)); return; }
+        await supabase.from('t_project_discounts').delete().eq('discount_id', id);
+        loadProjectData(selectedProjectId);
+    };
+
     const deleteServiceCost = async (id: string) => {
         await supabase.from('t_project_service_usage').delete().eq('id', id);
         loadProjectData(selectedProjectId);
@@ -415,6 +471,54 @@ export default function CalculationPage() {
                         </table>
                     </CostSection>
 
+                    {/* Extra Costs */}
+                    <CostSection title="Sonderkosten" icon={<AlertCircle className="h-5 w-5" />} total={extraKosten} color="amber"
+                        actions={<div className="flex gap-2">
+                            <button onClick={() => { setAddExtraForm({ cost_type: 'Sonstiges', description: '', cost: 0 }); setAddExtraModal(true); }} className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900"><Plus className="h-3.5 w-3.5" /> Kosten</button>
+                            <button onClick={saveExtraCosts} className="flex items-center gap-1 text-xs bg-amber-600 text-white px-2 py-1 rounded hover:bg-amber-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
+                        </div>}>
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                <tr><th className="px-4 py-2 text-left">Typ</th><th className="px-4 py-2 text-left">Beschreibung</th><th className="px-4 py-2 text-right w-32">Betrag (€)</th><th className="w-10"></th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {extraCosts.length === 0 ? <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">Keine Sonderkosten</td></tr> : extraCosts.map(e => (
+                                    <tr key={e.cost_id} className="hover:bg-slate-50 group">
+                                        <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={e.cost_type} onChange={ev => updateExtraCost(e.cost_id, 'cost_type', ev.target.value)}>
+                                            <option value="Maut">Maut</option><option value="Parkgebühr">Parkgebühr</option><option value="Entsorgung">Entsorgung</option><option value="Verpackung">Verpackung</option><option value="Sonstiges">Sonstiges</option>
+                                        </select></td>
+                                        <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={e.description} onChange={ev => updateExtraCost(e.cost_id, 'description', ev.target.value)} placeholder="Beschreibung..." /></td>
+                                        <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={e.cost} onChange={ev => updateExtraCost(e.cost_id, 'cost', +ev.target.value)} /></td>
+                                        <td className="px-2"><button onClick={() => deleteExtraCost(e.cost_id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </CostSection>
+
+                    {/* Discounts */}
+                    <CostSection title="Rabatte / Nachlässe" icon={<Percent className="h-5 w-5" />} total={discountTotal} color="purple"
+                        actions={<div className="flex gap-2">
+                            <button onClick={addDiscountRow} className="flex items-center gap-1 text-xs text-purple-700 hover:text-purple-900"><Plus className="h-3.5 w-3.5" /> Rabatt</button>
+                            <button onClick={saveDiscounts} className="flex items-center gap-1 text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
+                        </div>}>
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                <tr><th className="px-4 py-2 text-left">Bezeichnung</th><th className="px-4 py-2 w-24">Typ</th><th className="px-4 py-2 text-right w-32">Wert (€)</th><th className="w-10"></th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {discounts.length === 0 ? <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">Keine Rabatte</td></tr> : discounts.map(d => (
+                                    <tr key={d.discount_id} className="hover:bg-slate-50 group">
+                                        <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={d.label} onChange={e => updateDiscount(d.discount_id, 'label', e.target.value)} placeholder="Beschreibung..." /></td>
+                                        <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-1 py-1 text-sm" value={d.discount_type} onChange={e => updateDiscount(d.discount_id, 'discount_type', e.target.value)}><option value="flat">Pauschal</option><option value="percent">Prozent</option></select></td>
+                                        <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={d.value} onChange={e => updateDiscount(d.discount_id, 'value', +e.target.value)} /></td>
+                                        <td className="px-2"><button onClick={() => deleteDiscount(d.discount_id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </CostSection>
+
                     {/* Revenue */}
                     <CostSection title="Erlöse (Rechnungspositionen)" icon={<TrendingUp className="h-5 w-5" />} total={revenueTotal} color="green"
                         actions={<div className="flex gap-2">
@@ -494,6 +598,20 @@ export default function CalculationPage() {
                     </div>
                 </div>
             </Modal>}
+
+            {/* ======= ADD EXTRA COST MODAL ======= */}
+            {addExtraModal && <Modal title="Sonderkosten hinzufügen" onClose={() => setAddExtraModal(false)} onSave={addExtraCost} disabled={!addExtraForm.description}>
+                <div className="space-y-3">
+                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Typ</label>
+                        <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.cost_type} onChange={e => setAddExtraForm({ ...addExtraForm, cost_type: e.target.value })}>
+                            <option value="Maut">Maut</option><option value="Parkgebühr">Parkgebühr</option><option value="Entsorgung">Entsorgung</option><option value="Verpackung">Verpackung</option><option value="Sonstiges">Sonstiges</option>
+                        </select></div>
+                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Beschreibung</label>
+                        <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.description} onChange={e => setAddExtraForm({ ...addExtraForm, description: e.target.value })} placeholder="z.B. Autobahnmaut A3" /></div>
+                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Betrag (€)</label>
+                        <input type="number" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.cost} onChange={e => setAddExtraForm({ ...addExtraForm, cost: +e.target.value })} /></div>
+                </div>
+            </Modal>}
         </div>
     );
 }
@@ -507,7 +625,7 @@ function KpiCard({ label, value, icon, color, bgColor }: { label: string; value:
 }
 
 function CostSection({ title, icon, total, color, children, actions }: { title: string; icon: React.ReactNode; total: number; color: string; children: React.ReactNode; actions?: React.ReactNode }) {
-    const colorMap: Record<string, string> = { blue: 'border-l-blue-500', amber: 'border-l-amber-500', sky: 'border-l-sky-500', green: 'border-l-green-500', purple: 'border-l-purple-500' };
+    const colorMap: Record<string, string> = { blue: 'border-l-blue-500', amber: 'border-l-amber-500', sky: 'border-l-sky-500', green: 'border-l-green-500', purple: 'border-l-purple-500', red: 'border-l-red-500', orange: 'border-l-orange-500' };
     return (<div className={cn('bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden border-l-4', colorMap[color] || 'border-l-slate-300')}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2 text-slate-700">{icon}<span className="font-semibold">{title}</span></div>
