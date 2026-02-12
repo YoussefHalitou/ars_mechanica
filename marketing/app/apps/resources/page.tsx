@@ -266,11 +266,12 @@ function VehiclesTab() {
     );
 }
 
-// ============ MATERIALS TAB ============
-
 function MaterialsTab() {
-    const [items, setItems] = useState<(Material & { prices?: { cost_per_unit: number | null; price_per_unit: number | null } })[]>([]);
+    const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [editing, setEditing] = useState<any | null>(null);
+    const [isNew, setIsNew] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     const fetch = useCallback(async () => {
         setLoading(true);
@@ -281,48 +282,96 @@ function MaterialsTab() {
 
     useEffect(() => { fetch(); }, [fetch]);
 
+    const openNew = () => {
+        setEditing({ material_id: '', name: '', unit: 'Stk', category: '', vat_rate: 19 });
+        setIsNew(true);
+    };
+    const openEdit = (m: any) => { setEditing({ ...m }); setIsNew(false); };
+
+    const save = async () => {
+        if (!editing?.name) return;
+        setSaving(true);
+        if (isNew) {
+            const id = editing.material_id || `MAT-${Date.now()}`;
+            await supabase.from('t_materials').insert({
+                material_id: id, name: editing.name, unit: editing.unit || 'Stk',
+                category: editing.category || null, vat_rate: editing.vat_rate || 19, is_active: true,
+            });
+        } else {
+            await supabase.from('t_materials').update({
+                name: editing.name, unit: editing.unit, category: editing.category,
+                vat_rate: editing.vat_rate,
+            }).eq('material_id', editing.material_id);
+        }
+        setSaving(false); setEditing(null); fetch();
+    };
+
+    const remove = async (id: string) => {
+        if (!confirm('Material wirklich löschen?')) return;
+        await supabase.from('t_materials').update({ is_active: false }).eq('material_id', id);
+        fetch();
+    };
+
     if (loading) return <LoadingSpinner />;
 
     return (
         <>
             <div className="flex items-center justify-between mb-4">
                 <span className="text-sm text-slate-500">{items.length} Materialien</span>
+                <button onClick={openNew} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 shadow-sm">
+                    <Plus className="h-4 w-4" /> Hinzufügen
+                </button>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b text-xs font-medium text-slate-500 uppercase">
                         <tr><th className="px-4 py-3">Material</th><th className="px-4 py-3">Einheit</th>
                             <th className="px-4 py-3">Kategorie</th><th className="px-4 py-3 text-right">EK/Einheit</th>
-                            <th className="px-4 py-3 text-right">VK/Einheit</th><th className="px-4 py-3 text-right">MwSt %</th></tr>
+                            <th className="px-4 py-3 text-right">VK/Einheit</th><th className="px-4 py-3 text-right">MwSt %</th><th className="w-20"></th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {items.map(m => {
-                            const p = (m as any).prices;
-                            // prices could be an array or object
-                            const price = Array.isArray(p) ? p[0] : p;
+                            const p = Array.isArray(m.prices) ? m.prices[0] : m.prices;
                             return (
-                                <tr key={m.material_id} className="hover:bg-slate-50">
+                                <tr key={m.material_id} className="hover:bg-slate-50 group cursor-pointer" onClick={() => openEdit(m)}>
                                     <td className="px-4 py-3 font-medium text-slate-900">{m.name}</td>
                                     <td className="px-4 py-3 text-slate-600">{m.unit}</td>
                                     <td className="px-4 py-3"><span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full">{m.category || '—'}</span></td>
-                                    <td className="px-4 py-3 text-right font-mono">{price?.cost_per_unit ? `${price.cost_per_unit.toFixed(2)} €` : '—'}</td>
-                                    <td className="px-4 py-3 text-right font-mono">{price?.price_per_unit ? `${price.price_per_unit.toFixed(2)} €` : '—'}</td>
+                                    <td className="px-4 py-3 text-right font-mono">{p?.cost_per_unit ? `${p.cost_per_unit.toFixed(2)} €` : '—'}</td>
+                                    <td className="px-4 py-3 text-right font-mono">{p?.price_per_unit ? `${p.price_per_unit.toFixed(2)} €` : '—'}</td>
                                     <td className="px-4 py-3 text-right">{m.vat_rate ? `${m.vat_rate}%` : '—'}</td>
+                                    <td className="px-4 py-3" onClick={ev => ev.stopPropagation()}>
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => openEdit(m)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
+                                            <button onClick={() => remove(m.material_id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                        </div>
+                                    </td>
                                 </tr>
                             );
                         })}
                     </tbody>
                 </table>
             </div>
+            {editing && (
+                <Modal title={isNew ? 'Neues Material' : 'Material bearbeiten'} onClose={() => setEditing(null)} onSave={save} saving={saving}>
+                    <div className="grid grid-cols-2 gap-3">
+                        <Field label="Name *" value={editing.name || ''} onChange={v => setEditing({ ...editing, name: v })} />
+                        <Field label="Einheit" value={editing.unit || ''} onChange={v => setEditing({ ...editing, unit: v })} placeholder="z.B. Stk, m², Rolle" />
+                        <Field label="Kategorie" value={editing.category || ''} onChange={v => setEditing({ ...editing, category: v })} />
+                        <Field label="MwSt (%)" value={String(editing.vat_rate || '')} onChange={v => setEditing({ ...editing, vat_rate: parseFloat(v) || 0 })} type="number" />
+                    </div>
+                </Modal>
+            )}
         </>
     );
 }
 
-// ============ SERVICES TAB ============
-
 function ServicesTab() {
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [editing, setEditing] = useState<any | null>(null);
+    const [isNew, setIsNew] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     const fetch = useCallback(async () => {
         setLoading(true);
@@ -333,22 +382,54 @@ function ServicesTab() {
 
     useEffect(() => { fetch(); }, [fetch]);
 
+    const openNew = () => {
+        setEditing({ service_id: '', name: '', default_unit: 'Std', category: '' });
+        setIsNew(true);
+    };
+    const openEdit = (s: any) => { setEditing({ ...s }); setIsNew(false); };
+
+    const save = async () => {
+        if (!editing?.name) return;
+        setSaving(true);
+        if (isNew) {
+            const id = editing.service_id || `SVC-${Date.now()}`;
+            await supabase.from('t_services').insert({
+                service_id: id, name: editing.name, default_unit: editing.default_unit || 'Std',
+                category: editing.category || null, is_active: true,
+            });
+        } else {
+            await supabase.from('t_services').update({
+                name: editing.name, default_unit: editing.default_unit, category: editing.category,
+            }).eq('service_id', editing.service_id);
+        }
+        setSaving(false); setEditing(null); fetch();
+    };
+
+    const remove = async (id: string) => {
+        if (!confirm('Leistung wirklich löschen?')) return;
+        await supabase.from('t_services').update({ is_active: false }).eq('service_id', id);
+        fetch();
+    };
+
     if (loading) return <LoadingSpinner />;
 
     return (
         <>
             <div className="flex items-center justify-between mb-4">
                 <span className="text-sm text-slate-500">{items.length} Leistungen</span>
+                <button onClick={openNew} className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 shadow-sm">
+                    <Plus className="h-4 w-4" /> Hinzufügen
+                </button>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b text-xs font-medium text-slate-500 uppercase">
                         <tr><th className="px-4 py-3">Leistung</th><th className="px-4 py-3">Einheit</th>
-                            <th className="px-4 py-3">Kategorie</th><th className="px-4 py-3">Lieferanten / Preise</th></tr>
+                            <th className="px-4 py-3">Kategorie</th><th className="px-4 py-3">Lieferanten / Preise</th><th className="w-20"></th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {items.map((s: any) => (
-                            <tr key={s.service_id} className="hover:bg-slate-50">
+                            <tr key={s.service_id} className="hover:bg-slate-50 group cursor-pointer" onClick={() => openEdit(s)}>
                                 <td className="px-4 py-3 font-medium text-slate-900">{s.name}</td>
                                 <td className="px-4 py-3 text-slate-600">{s.default_unit || '—'}</td>
                                 <td className="px-4 py-3"><span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full">{s.category || '—'}</span></td>
@@ -362,11 +443,26 @@ function ServicesTab() {
                                         {(!s.prices || s.prices.length === 0) && <span className="text-slate-400 text-xs">Keine Preise</span>}
                                     </div>
                                 </td>
+                                <td className="px-4 py-3" onClick={ev => ev.stopPropagation()}>
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => openEdit(s)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
+                                        <button onClick={() => remove(s.service_id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
+            {editing && (
+                <Modal title={isNew ? 'Neue Leistung' : 'Leistung bearbeiten'} onClose={() => setEditing(null)} onSave={save} saving={saving}>
+                    <div className="grid grid-cols-2 gap-3">
+                        <Field label="Name *" value={editing.name || ''} onChange={v => setEditing({ ...editing, name: v })} />
+                        <Field label="Einheit" value={editing.default_unit || ''} onChange={v => setEditing({ ...editing, default_unit: v })} placeholder="z.B. Std, m³, Pauschal" />
+                        <Field label="Kategorie" value={editing.category || ''} onChange={v => setEditing({ ...editing, category: v })} />
+                    </div>
+                </Modal>
+            )}
         </>
     );
 }

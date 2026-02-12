@@ -5,7 +5,7 @@ import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay }
 import { de } from 'date-fns/locale';
 import {
     ChevronLeft, ChevronRight, Calendar as CalendarIcon, Users, Truck, Plus,
-    X, Save, Loader2, Clock, FileText, User, MessageSquare, GripVertical
+    X, Save, Loader2, Clock, FileText, User, MessageSquare, Pencil, Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -25,6 +25,8 @@ type MorningPlan = Database['public']['Tables']['t_morningplan']['Row'] & {
 type StaffRow = Database['public']['Tables']['t_morningplan_staff']['Row'] & { employee?: Employee };
 type VehicleDailyStatus = Database['public']['Tables']['t_vehicle_daily_status']['Row'];
 type EmployeeDailyNote = Database['public']['Tables']['t_employee_daily_notes']['Row'];
+
+const SERVICE_TYPES = ['Umzug', 'Entrümpelung', 'Transport', 'Einlagerung', 'Malerarbeiten', 'Kartonlieferung', 'Sonstiges'];
 
 // ================ DRAGGABLE PROJECT ================
 function DraggableProject({ project }: { project: Project }) {
@@ -47,8 +49,8 @@ function DraggableProject({ project }: { project: Project }) {
 }
 
 // ================ DROPPABLE DAY ================
-function DroppableDay({ day, plans, onDelete, onOpenStaff }: {
-    day: Date; plans: MorningPlan[]; onDelete: (id: string) => void; onOpenStaff: (plan: MorningPlan) => void;
+function DroppableDay({ day, plans, onDelete, onOpenStaff, onEditPlan }: {
+    day: Date; plans: MorningPlan[]; onDelete: (id: string) => void; onOpenStaff: (plan: MorningPlan) => void; onEditPlan: (plan: MorningPlan) => void;
 }) {
     const dateStr = format(day, 'yyyy-MM-dd');
     const { setNodeRef, isOver } = useDroppable({ id: `day-${dateStr}`, data: { date: dateStr } });
@@ -66,13 +68,16 @@ function DroppableDay({ day, plans, onDelete, onOpenStaff }: {
             <div className="flex-1 p-1.5 bg-slate-50/30 space-y-1.5 overflow-y-auto">
                 {plans.map(plan => (
                     <div key={plan.plan_id} className="relative rounded-md border border-slate-200 bg-white p-2 shadow-sm group hover:border-blue-200 transition-colors">
-                        <button onClick={() => onDelete(plan.plan_id)}
-                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity text-xs">×</button>
+                        <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                            <button onClick={() => onEditPlan(plan)} className="text-slate-400 hover:text-blue-600 text-xs p-0.5"><Pencil className="h-3 w-3" /></button>
+                            <button onClick={() => onDelete(plan.plan_id)} className="text-slate-400 hover:text-red-500 text-xs p-0.5">×</button>
+                        </div>
                         <div className="text-xs font-semibold text-blue-700 truncate mb-0.5">{plan.project?.name || 'Unbekannt'}</div>
                         <div className="text-[10px] text-slate-500 flex items-center gap-2 mb-1">
                             <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{plan.start_time?.substring(0, 5) || '07:00'}</span>
                             {plan.vehicle_names && <span className="flex items-center gap-0.5"><Truck className="h-2.5 w-2.5" />{plan.vehicle_names}</span>}
                         </div>
+                        {plan.service_type && <div className="text-[9px] text-slate-400 mb-0.5">{plan.service_type}</div>}
                         <div className="flex items-center gap-1 flex-wrap">
                             {(plan.staff || []).map(s => (
                                 <span key={s.id} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full truncate max-w-[60px]">{s.employee?.name?.split(' ')[0] || '?'}</span>
@@ -105,13 +110,22 @@ export default function PlanningPage() {
     const [loading, setLoading] = useState(true);
     const [selectedDay, setSelectedDay] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
+    // Plan modal
+    const [planModal, setPlanModal] = useState<{ mode: 'create' | 'edit'; plan?: MorningPlan; date: string } | null>(null);
+    const [planForm, setPlanForm] = useState({ project_id: '', start_time: '07:00', vehicle_id: '', vehicle_names: '', service_type: '', notes: '' });
+    const [savingPlan, setSavingPlan] = useState(false);
+
     // Staff modal
     const [staffModalPlan, setStaffModalPlan] = useState<MorningPlan | null>(null);
     const [staffSelection, setStaffSelection] = useState<{ employee_id: string; start_time: string; notes: string }[]>([]);
     const [savingStaff, setSavingStaff] = useState(false);
 
-    // Bottom panel tab
+    // Bottom panel
     const [bottomTab, setBottomTab] = useState<'vehicles' | 'notes'>('vehicles');
+
+    // Note editing
+    const [editingNote, setEditingNote] = useState<{ employee_code: string; notizen: string; id?: number } | null>(null);
+    const [savingNote, setSavingNote] = useState(false);
 
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -134,7 +148,6 @@ export default function PlanningPage() {
         setEmployees(empRes.data || []);
         setVehicles(vehRes.data || []);
 
-        // Fetch staff for all plans
         const plansRaw = (planRes.data || []) as MorningPlan[];
         if (plansRaw.length > 0) {
             const planIds = plansRaw.map(p => p.plan_id);
@@ -148,7 +161,6 @@ export default function PlanningPage() {
                 if (!staffByPlan[s.plan_id!]) staffByPlan[s.plan_id!] = [];
                 staffByPlan[s.plan_id!].push(s);
             });
-
             plansRaw.forEach(p => { p.staff = staffByPlan[p.plan_id] || []; });
         }
 
@@ -180,22 +192,63 @@ export default function PlanningPage() {
         const project = projects.find(p => p.project_id === projectId);
         if (!project) return;
 
-        const tempId = `temp-${Date.now()}`;
-        const newPlan: MorningPlan = { plan_id: tempId, plan_date: dateStr, project_id: projectId, start_time: '07:00:00', project, staff: [], vehicle_id: null, service_type: null, notes: null, angebotsart: null, vehicle_names: null, created_at: null, updated_at: null };
-        setPlans(prev => [...prev, newPlan]);
+        // Open create modal pre-filled
+        setPlanForm({
+            project_id: projectId,
+            start_time: '07:00',
+            vehicle_id: '',
+            vehicle_names: '',
+            service_type: project.dienstleistungen || '',
+            notes: '',
+        });
+        setPlanModal({ mode: 'create', date: dateStr });
+    };
 
-        const { data, error } = await supabase
-            .from('t_morningplan').insert({ plan_date: dateStr, project_id: projectId, start_time: '07:00:00' }).select().single();
+    // ---- PLAN CRUD ----
+    const openCreatePlan = (dateStr: string) => {
+        setPlanForm({ project_id: '', start_time: '07:00', vehicle_id: '', vehicle_names: '', service_type: '', notes: '' });
+        setPlanModal({ mode: 'create', date: dateStr });
+    };
 
-        if (error) {
-            setPlans(prev => prev.filter(p => p.plan_id !== tempId));
-            alert("Fehler: " + error.message);
-        } else {
-            setPlans(prev => prev.map(p => p.plan_id === tempId ? { ...p, plan_id: data.plan_id } : p));
+    const openEditPlan = (plan: MorningPlan) => {
+        setPlanForm({
+            project_id: plan.project_id || '',
+            start_time: plan.start_time?.substring(0, 5) || '07:00',
+            vehicle_id: plan.vehicle_id || '',
+            vehicle_names: plan.vehicle_names || '',
+            service_type: plan.service_type || '',
+            notes: plan.notes || '',
+        });
+        setPlanModal({ mode: 'edit', plan, date: plan.plan_date });
+    };
+
+    const savePlan = async () => {
+        if (!planForm.project_id || !planModal) return;
+        setSavingPlan(true);
+
+        const payload = {
+            plan_date: planModal.date,
+            project_id: planForm.project_id,
+            start_time: planForm.start_time || '07:00',
+            vehicle_id: planForm.vehicle_id || null,
+            vehicle_names: planForm.vehicle_names || null,
+            service_type: planForm.service_type || null,
+            notes: planForm.notes || null,
+        };
+
+        if (planModal.mode === 'create') {
+            await supabase.from('t_morningplan').insert(payload);
+        } else if (planModal.plan) {
+            await supabase.from('t_morningplan').update(payload).eq('plan_id', planModal.plan.plan_id);
         }
+
+        setSavingPlan(false);
+        setPlanModal(null);
+        fetchData();
     };
 
     const handleDeletePlan = async (planId: string) => {
+        if (!confirm('Einsatz wirklich löschen?')) return;
         const prev = [...plans];
         setPlans(p => p.filter(x => x.plan_id !== planId));
         const { error } = await supabase.from('t_morningplan').delete().eq('plan_id', planId);
@@ -217,7 +270,7 @@ export default function PlanningPage() {
     const saveStaff = async () => {
         if (!staffModalPlan) return;
         setSavingStaff(true);
-        // Delete existing staff for this plan
+        // Delete existing
         await supabase.from('t_morningplan_staff').delete().eq('plan_id', staffModalPlan.plan_id);
         // Insert new
         const inserts = staffSelection.filter(s => s.employee_id).map((s, i) => ({
@@ -227,13 +280,47 @@ export default function PlanningPage() {
             member_notes: s.notes || null,
             sort_order: i,
         }));
-        if (inserts.length > 0) await supabase.from('t_morningplan_staff').insert(inserts);
+        if (inserts.length > 0) {
+            await supabase.from('t_morningplan_staff').insert(inserts);
+
+            // Auto-create time pairs for each new staff member
+            const project = staffModalPlan.project;
+            if (project) {
+                for (const ins of inserts) {
+                    const emp = employees.find(e => e.employee_id === ins.employee_id);
+                    if (emp) {
+                        // Check if time pair already exists
+                        const { data: existing } = await supabase
+                            .from('t_time_pairs')
+                            .select('pair_id')
+                            .eq('project_id', project.project_id)
+                            .eq('datum', staffModalPlan.plan_date)
+                            .eq('mitarbeiter', emp.name)
+                            .limit(1);
+
+                        if (!existing || existing.length === 0) {
+                            await supabase.from('t_time_pairs').insert({
+                                project_id: project.project_id,
+                                plan_id: staffModalPlan.plan_id,
+                                datum: staffModalPlan.plan_date,
+                                mitarbeiter: emp.name,
+                                lis_von: ins.individual_start_time || staffModalPlan.start_time || '07:00:00',
+                                lis_bis: null,
+                                kunde_von: null,
+                                kunde_bis: null,
+                                pause_min: 0,
+                            });
+                        }
+                    }
+                }
+            }
+        }
         setSavingStaff(false);
         setStaffModalPlan(null);
         fetchData();
     };
 
-    // ---- VEHICLE STATUS SAVE ----
+    // ---- VEHICLE STATUS ----
     const saveVehicleStatus = async (vId: string, vName: string, status: string, info: string) => {
         const existing = vehicleStatuses.find(v => v.vehicle_name === vName && v.plan_date === selectedDay);
         if (existing) {
@@ -244,24 +331,57 @@ export default function PlanningPage() {
         fetchDayPanels();
     };
 
-    // ---- EXPORT MORNING PLAN ----
+    // ---- EMPLOYEE NOTES CRUD ----
+    const openAddNote = () => {
+        setEditingNote({ employee_code: '', notizen: '' });
+    };
+
+    const openEditNote = (note: EmployeeDailyNote) => {
+        setEditingNote({ employee_code: note.employee_code, notizen: note.notizen || '', id: note.id });
+    };
+
+    const saveNote = async () => {
+        if (!editingNote) return;
+        setSavingNote(true);
+        if (editingNote.id) {
+            await supabase.from('t_employee_daily_notes').update({ notizen: editingNote.notizen }).eq('id', editingNote.id);
+        } else {
+            const maxOrder = employeeNotes.reduce((max, n) => Math.max(max, n.sort_order || 0), 0);
+            await supabase.from('t_employee_daily_notes').insert({
+                employee_code: editingNote.employee_code,
+                plan_date: selectedDay,
+                notizen: editingNote.notizen,
+                sort_order: maxOrder + 1,
+            });
+        }
+        setSavingNote(false);
+        setEditingNote(null);
+        fetchDayPanels();
+    };
+
+    const deleteNote = async (id: number) => {
+        if (!confirm('Notiz löschen?')) return;
+        await supabase.from('t_employee_daily_notes').delete().eq('id', id);
+        fetchDayPanels();
+    };
+
+    // ---- EXPORT ----
     const exportMorningPlan = () => {
         const dayPlans = plans.filter(p => p.plan_date === selectedDay);
         const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Morgenplan ${selectedDay}</title>
         <style>body{font-family:system-ui;margin:2rem;color:#1e293b}h1{font-size:1.5rem;margin-bottom:0.5rem}table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{border:1px solid #e2e8f0;padding:8px 12px;text-align:left;font-size:0.85rem}th{background:#f1f5f9;font-weight:600}.header{background:#1e3a5f;color:white;padding:1rem;border-radius:8px;margin-bottom:1rem}</style></head><body>
         <div class="header"><h1>🌅 Morgenplan</h1><p>${format(new Date(selectedDay), 'EEEE, d. MMMM yyyy', { locale: de })}</p></div>
-        <table><tr><th>#</th><th>Projekt</th><th>Adresse</th><th>Start</th><th>Fahrzeug</th><th>Team</th></tr>
-        ${dayPlans.map((p, i) => `<tr><td>${i + 1}</td><td>${p.project?.name || '—'}</td><td>${[p.project?.strasse, p.project?.nr].filter(Boolean).join(' ')}, ${p.project?.plz || ''} ${p.project?.ort || ''}</td><td>${p.start_time?.substring(0, 5) || '07:00'}</td><td>${p.vehicle_names || '—'}</td><td>${(p.staff || []).map(s => s.employee?.name || '?').join(', ') || '—'}</td></tr>`).join('')}
+        <table><tr><th>#</th><th>Projekt</th><th>Adresse</th><th>Start</th><th>Dienstleistung</th><th>Fahrzeug</th><th>Team</th><th>Notizen</th></tr>
+        ${dayPlans.map((p, i) => `<tr><td>${i + 1}</td><td>${p.project?.name || '—'}</td><td>${[p.project?.strasse, p.project?.nr].filter(Boolean).join(' ')}, ${p.project?.plz || ''} ${p.project?.ort || ''}</td><td>${p.start_time?.substring(0, 5) || '07:00'}</td><td>${p.service_type || '—'}</td><td>${p.vehicle_names || '—'}</td><td>${(p.staff || []).map(s => s.employee?.name || '?').join(', ') || '—'}</td><td>${p.notes || ''}</td></tr>`).join('')}
         </table>
         <h2>Fahrzeugstatus</h2><table><tr><th>Fahrzeug</th><th>Status</th><th>Info</th></tr>
         ${vehicles.map(v => { const vs = vehicleStatuses.find(s => s.vehicle_name === v.nickname); return `<tr><td>${v.nickname || v.vehicle_id}</td><td>${vs?.status || '—'}</td><td>${vs?.informationen || '—'}</td></tr>`; }).join('')}
-        </table></body></html>`;
+        </table>
+        ${employeeNotes.length > 0 ? `<h2>Mitarbeiter-Notizen</h2><table><tr><th>Mitarbeiter</th><th>Notiz</th></tr>${employeeNotes.map(n => `<tr><td>${n.employee_code}</td><td>${n.notizen || '—'}</td></tr>`).join('')}</table>` : ''}
+        </body></html>`;
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Morgenplan_${selectedDay}.html`;
-        a.click();
+        const a = document.createElement('a'); a.href = url; a.download = `Morgenplan_${selectedDay}.html`; a.click();
         URL.revokeObjectURL(url);
     };
 
@@ -279,9 +399,13 @@ export default function PlanningPage() {
                             </span>
                             <button onClick={() => setCurrentDate(addDays(currentDate, 7))} className="p-1 hover:bg-slate-100 rounded"><ChevronRight className="h-5 w-5 text-slate-600" /></button>
                         </div>
+                        <button onClick={() => openCreatePlan(selectedDay)}
+                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 shadow-sm">
+                            <Plus className="h-3.5 w-3.5" /> Neuer Einsatz
+                        </button>
                         <button onClick={exportMorningPlan}
                             className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white hover:bg-slate-900 shadow-sm">
-                            <FileText className="h-3.5 w-3.5" /> Morgenplan Export
+                            <FileText className="h-3.5 w-3.5" /> Export
                         </button>
                     </div>
                 </header>
@@ -310,8 +434,10 @@ export default function PlanningPage() {
                                 {weekDays.map(day => {
                                     const dateStr = format(day, 'yyyy-MM-dd');
                                     return (
-                                        <div key={dateStr} onClick={() => setSelectedDay(dateStr)} className={cn("cursor-pointer", dateStr === selectedDay && "ring-2 ring-blue-400 rounded-xl")}>
-                                            <DroppableDay day={day} plans={plans.filter(p => p.plan_date === dateStr)} onDelete={handleDeletePlan} onOpenStaff={openStaffModal} />
+                                        <div key={dateStr} onClick={() => setSelectedDay(dateStr)}
+                                            className={cn("cursor-pointer", dateStr === selectedDay && "ring-2 ring-blue-400 rounded-xl")}>
+                                            <DroppableDay day={day} plans={plans.filter(p => p.plan_date === dateStr)}
+                                                onDelete={handleDeletePlan} onOpenStaff={openStaffModal} onEditPlan={openEditPlan} />
                                         </div>
                                     );
                                 })}
@@ -333,9 +459,15 @@ export default function PlanningPage() {
                                         <MessageSquare className="h-3.5 w-3.5" /> Mitarbeiter-Notizen
                                     </button>
                                 </div>
-                                <span className="text-xs text-slate-400">{format(new Date(selectedDay), 'EEEE, d. MMM', { locale: de })}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-400">{format(new Date(selectedDay), 'EEEE, d. MMM', { locale: de })}</span>
+                                    {bottomTab === 'notes' && (
+                                        <button onClick={openAddNote} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                                            <Plus className="h-3 w-3" /> Notiz
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-
                             <div className="overflow-auto p-3" style={{ height: 'calc(100% - 44px)' }}>
                                 {bottomTab === 'vehicles' ? (
                                     <div className="grid grid-cols-3 gap-2">
@@ -374,14 +506,20 @@ export default function PlanningPage() {
                                     </div>
                                 ) : (
                                     <div className="space-y-1.5">
-                                        {employeeNotes.length === 0 ? (
-                                            <div className="text-center py-4 text-xs text-slate-400">Keine Notizen für diesen Tag</div>
+                                        {employeeNotes.length === 0 && !editingNote ? (
+                                            <div className="text-center py-4 text-xs text-slate-400">Keine Notizen für diesen Tag.
+                                                <button onClick={openAddNote} className="text-blue-600 hover:underline ml-1">Notiz hinzufügen</button>
+                                            </div>
                                         ) : employeeNotes.map(n => (
-                                            <div key={n.id} className="flex items-start gap-2 rounded-lg border border-slate-200 p-2 bg-slate-50/50">
+                                            <div key={n.id} className="flex items-start gap-2 rounded-lg border border-slate-200 p-2 bg-slate-50/50 group">
                                                 <User className="h-3.5 w-3.5 text-slate-400 mt-0.5 shrink-0" />
-                                                <div>
+                                                <div className="flex-1 min-w-0">
                                                     <span className="text-xs font-medium text-slate-700">{n.employee_code}</span>
                                                     <p className="text-[10px] text-slate-500">{n.notizen || '—'}</p>
+                                                </div>
+                                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                    <button onClick={() => openEditNote(n)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-3 w-3" /></button>
+                                                    <button onClick={() => deleteNote(n.id)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
                                                 </div>
                                             </div>
                                         ))}
@@ -402,7 +540,82 @@ export default function PlanningPage() {
                 )}
             </DragOverlay>
 
-            {/* Staff Assignment Modal */}
+            {/* ======= PLAN CREATE/EDIT MODAL ======= */}
+            {planModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setPlanModal(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg m-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between border-b px-6 py-4">
+                            <h2 className="text-lg font-bold text-slate-800">{planModal.mode === 'create' ? 'Neuer Einsatz' : 'Einsatz bearbeiten'}</h2>
+                            <button onClick={() => setPlanModal(null)} className="p-1 rounded-lg hover:bg-slate-100"><X className="h-5 w-5 text-slate-400" /></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">{format(new Date(planModal.date), 'EEEE, d. MMMM yyyy', { locale: de })}</div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Projekt *</label>
+                                <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={planForm.project_id}
+                                    onChange={e => {
+                                        const p = projects.find(pr => pr.project_id === e.target.value);
+                                        setPlanForm({ ...planForm, project_id: e.target.value, service_type: p?.dienstleistungen || planForm.service_type });
+                                    }}>
+                                    <option value="">Projekt wählen...</option>
+                                    {projects.map(p => <option key={p.project_id} value={p.project_id}>{p.project_code} — {p.name} ({p.ort})</option>)}
+                                </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Startzeit</label>
+                                    <input type="time" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={planForm.start_time}
+                                        onChange={e => setPlanForm({ ...planForm, start_time: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Dienstleistung</label>
+                                    <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={planForm.service_type}
+                                        onChange={e => setPlanForm({ ...planForm, service_type: e.target.value })}>
+                                        <option value="">—</option>
+                                        {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Fahrzeug</label>
+                                    <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={planForm.vehicle_id}
+                                        onChange={e => {
+                                            const v = vehicles.find(vh => vh.vehicle_id === e.target.value);
+                                            setPlanForm({ ...planForm, vehicle_id: e.target.value, vehicle_names: v?.nickname || '' });
+                                        }}>
+                                        <option value="">Kein Fahrzeug</option>
+                                        {vehicles.map(v => <option key={v.vehicle_id} value={v.vehicle_id}>{v.nickname || v.vehicle_id}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Fahrzeug-Name (Text)</label>
+                                    <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={planForm.vehicle_names}
+                                        onChange={e => setPlanForm({ ...planForm, vehicle_names: e.target.value })} placeholder="z.B. L4U + L Caddy" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Notizen</label>
+                                <textarea className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-none" rows={2} value={planForm.notes}
+                                    onChange={e => setPlanForm({ ...planForm, notes: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 border-t px-6 py-4">
+                            <button onClick={() => setPlanModal(null)} className="px-4 py-2 text-sm font-medium text-slate-600 rounded-lg border border-slate-300 hover:bg-slate-50">Abbrechen</button>
+                            <button onClick={savePlan} disabled={savingPlan || !planForm.project_id}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm">
+                                {savingPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ======= STAFF ASSIGNMENT MODAL ======= */}
             {staffModalPlan && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setStaffModalPlan(null)}>
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg m-4" onClick={e => e.stopPropagation()}>
@@ -419,7 +632,7 @@ export default function PlanningPage() {
                                     <select className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" value={s.employee_id}
                                         onChange={e => { const copy = [...staffSelection]; copy[i].employee_id = e.target.value; setStaffSelection(copy); }}>
                                         <option value="">Mitarbeiter wählen...</option>
-                                        {employees.map(emp => <option key={emp.employee_id} value={emp.employee_id}>{emp.name}</option>)}
+                                        {employees.map(emp => <option key={emp.employee_id} value={emp.employee_id}>{emp.name} ({emp.contract_type || ''})</option>)}
                                     </select>
                                     <input type="time" className="rounded-lg border border-slate-300 px-2 py-2 text-sm w-24" value={s.start_time}
                                         onChange={e => { const copy = [...staffSelection]; copy[i].start_time = e.target.value; setStaffSelection(copy); }} />
@@ -436,6 +649,42 @@ export default function PlanningPage() {
                             <button onClick={saveStaff} disabled={savingStaff}
                                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm">
                                 {savingStaff ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ======= EMPLOYEE NOTE MODAL ======= */}
+            {editingNote && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingNote(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm m-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between border-b px-6 py-4">
+                            <h2 className="text-lg font-bold text-slate-800">{editingNote.id ? 'Notiz bearbeiten' : 'Neue Notiz'}</h2>
+                            <button onClick={() => setEditingNote(null)} className="p-1 rounded-lg hover:bg-slate-100"><X className="h-5 w-5 text-slate-400" /></button>
+                        </div>
+                        <div className="p-6 space-y-3">
+                            {!editingNote.id && (
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Mitarbeiter</label>
+                                    <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={editingNote.employee_code}
+                                        onChange={e => setEditingNote({ ...editingNote, employee_code: e.target.value })}>
+                                        <option value="">Mitarbeiter wählen...</option>
+                                        {employees.map(emp => <option key={emp.employee_id} value={emp.employee_code || emp.name}>{emp.name} ({emp.employee_code})</option>)}
+                                    </select>
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Notiz</label>
+                                <textarea className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-none" rows={3}
+                                    value={editingNote.notizen} onChange={e => setEditingNote({ ...editingNote, notizen: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 border-t px-6 py-4">
+                            <button onClick={() => setEditingNote(null)} className="px-4 py-2 text-sm font-medium text-slate-600 rounded-lg border border-slate-300 hover:bg-slate-50">Abbrechen</button>
+                            <button onClick={saveNote} disabled={savingNote || (!editingNote.id && !editingNote.employee_code)}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm">
+                                {savingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
                             </button>
                         </div>
                     </div>

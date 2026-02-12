@@ -410,6 +410,32 @@ export interface Database {
                     break_minutes?: number | null
                 }
             }
+            t_project_service_usage: {
+                Row: {
+                    id: string
+                    project_id: string
+                    service_id: string
+                    quantity: number | null
+                    supplier: string | null
+                    notes: string | null
+                    created_at: string | null
+                }
+                Insert: {
+                    id?: string
+                    project_id: string
+                    service_id: string
+                    quantity?: number | null
+                    supplier?: string | null
+                    notes?: string | null
+                }
+                Update: {
+                    project_id?: string
+                    service_id?: string
+                    quantity?: number | null
+                    supplier?: string | null
+                    notes?: string | null
+                }
+            }
             t_materials: {
                 Row: {
                     material_id: string
