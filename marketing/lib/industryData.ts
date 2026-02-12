@@ -1,10 +1,3 @@
-import {
-    Truck, Clock, ClipboardCheck, Users, Package, MapPin,
-    PaintBucket, Calculator, FileText, BarChart3, Camera, CheckSquare,
-    Shield, Wrench, CalendarDays, HardHat, Ruler, AlertTriangle,
-    Droplets, Thermometer, Zap, CircuitBoard, Stethoscope, Navigation,
-    SprayCan, Building2, ListChecks, Flame,
-} from 'lucide-react'
 import { LucideIcon } from 'lucide-react'
 
 // ============================================================================
@@ -12,7 +5,7 @@ import { LucideIcon } from 'lucide-react'
 // ============================================================================
 
 export interface IndustryFeature {
-    icon: LucideIcon
+    icon: string // Changed from LucideIcon to string
     title: string
     desc: string
 }
@@ -73,12 +66,12 @@ export const umzugsunternehmen: IndustryConfig = {
         { title: 'Zeiterfassung auf Vertrauensbasis', desc: 'Ohne digitale Stempeluhr weiß niemand genau, wann Arbeitszeiten angefangen und aufgehört haben.' },
     ],
     features: [
-        { icon: ClipboardCheck, title: 'Digitale Abnahmen', desc: 'Kundenunterschrift, Fotos und Schadensdokumentation direkt auf dem Tablet.' },
-        { icon: Truck, title: 'Fahrzeugplanung', desc: 'TÜV-Termine, Kilometerstand und Verfügbarkeit Ihrer LKW-Flotte im Blick.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'GPS-basierte Stempeluhr. Arbeitszeiten, Pausen und Fahrzeiten lückenlos erfasst.' },
-        { icon: Users, title: 'Teamplanung', desc: 'Morgenplanung mit Drag-and-Drop: Teams, Fahrzeuge und Aufträge zuweisen.' },
-        { icon: MapPin, title: 'Routenplanung', desc: 'Auftragsadressen im Überblick. Optimierte Reihenfolge für weniger Leerfahrten.' },
-        { icon: BarChart3, title: 'Nachkalkulation', desc: 'Soll vs. Ist pro Umzug: Stunden, Material und Fahrzeugkosten transparent.' },
+        { icon: 'ClipboardCheck', title: 'Digitale Abnahmen', desc: 'Kundenunterschrift, Fotos und Schadensdokumentation direkt auf dem Tablet.' },
+        { icon: 'Truck', title: 'Fahrzeugplanung', desc: 'TÜV-Termine, Kilometerstand und Verfügbarkeit Ihrer LKW-Flotte im Blick.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'GPS-basierte Stempeluhr. Arbeitszeiten, Pausen und Fahrzeiten lückenlos erfasst.' },
+        { icon: 'Users', title: 'Teamplanung', desc: 'Morgenplanung mit Drag-and-Drop: Teams, Fahrzeuge und Aufträge zuweisen.' },
+        { icon: 'MapPin', title: 'Routenplanung', desc: 'Auftragsadressen im Überblick. Optimierte Reihenfolge für weniger Leerfahrten.' },
+        { icon: 'BarChart3', title: 'Nachkalkulation', desc: 'Soll vs. Ist pro Umzug: Stunden, Material und Fahrzeugkosten transparent.' },
     ],
     dashboardStats: [
         { label: 'Umzüge diese Woche', value: '12' },
@@ -117,12 +110,12 @@ export const maler: IndustryConfig = {
         { title: 'Zeitnachweise fehlen', desc: 'Auftraggeber fragen nach Stundenaufstellungen — die von Hand zusammengesucht werden müssen.' },
     ],
     features: [
-        { icon: PaintBucket, title: 'Materialverwaltung', desc: 'Farben, Spachtelmasse und Zubehör. Verbrauch direkt auf Projekte buchen.' },
-        { icon: Calculator, title: 'Nachkalkulation', desc: 'Soll- vs. Ist-Kosten pro Projekt. Materialverbrauch, Stunden und Fahrtkosten.' },
-        { icon: Camera, title: 'Fotodokumentation', desc: 'Vorher-Nachher-Fotos direkt im Projekt. Dokumentation für Auftraggeber und Versicherung.' },
-        { icon: FileText, title: 'Digitale Protokolle', desc: 'Abnahmen mit Kundenunterschrift. Mängelberichte per PDF versenden.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'Digitale Stempeluhr pro Projekt. Arbeitszeitnachweise auf Knopfdruck.' },
-        { icon: BarChart3, title: 'Auswertungen', desc: 'Welche Projekte sind profitabel? Wo verlieren Sie Geld? Daten statt Bauchgefühl.' },
+        { icon: 'PaintBucket', title: 'Materialverwaltung', desc: 'Farben, Spachtelmasse und Zubehör. Verbrauch direkt auf Projekte buchen.' },
+        { icon: 'Calculator', title: 'Nachkalkulation', desc: 'Soll- vs. Ist-Kosten pro Projekt. Materialverbrauch, Stunden und Fahrtkosten.' },
+        { icon: 'Camera', title: 'Fotodokumentation', desc: 'Vorher-Nachher-Fotos direkt im Projekt. Dokumentation für Auftraggeber und Versicherung.' },
+        { icon: 'FileText', title: 'Digitale Protokolle', desc: 'Abnahmen mit Kundenunterschrift. Mängelberichte per PDF versenden.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'Digitale Stempeluhr pro Projekt. Arbeitszeitnachweise auf Knopfdruck.' },
+        { icon: 'BarChart3', title: 'Auswertungen', desc: 'Welche Projekte sind profitabel? Wo verlieren Sie Geld? Daten statt Bauchgefühl.' },
     ],
     dashboardStats: [
         { label: 'Laufende Projekte', value: '8' },
@@ -161,12 +154,12 @@ export const geruestbauer: IndustryConfig = {
         { title: 'Mannstärke schwer planbar', desc: 'Für jeden Aufbau brauchen Sie das richtige Team mit der richtigen Qualifikation. Planung auf Zuruf funktioniert nicht.' },
     ],
     features: [
-        { icon: Shield, title: 'Prüfprotokolle', desc: 'Digitale Sicherheitsprüfungen nach TRBS. Fristen, Ergebnisse und Fotos dokumentiert.' },
-        { icon: Ruler, title: 'Standzeit-Tracking', desc: 'Auf- und Abbaudatum pro Gerüst. Automatische Berechnung der Standzeit und Mietkosten.' },
-        { icon: HardHat, title: 'Personalplanung', desc: 'Qualifikationen, Verfügbarkeiten und Einsatzplanung für Ihre Kolonne.' },
-        { icon: CalendarDays, title: 'Morgenplanung', desc: 'Tagesplan für alle Teams: Welche Baustelle, welches Material, welcher LKW.' },
-        { icon: AlertTriangle, title: 'Mängelmanagement', desc: 'Festgestellte Mängel dokumentieren, zuweisen und nachverfolgen — bis zur Behebung.' },
-        { icon: Wrench, title: 'Fahrzeuge & Geräte', desc: 'TÜV, Prüffristen und Wartung für Fahrzeuge, Anhänger und Materialcontainer.' },
+        { icon: 'Shield', title: 'Prüfprotokolle', desc: 'Digitale Sicherheitsprüfungen nach TRBS. Fristen, Ergebnisse und Fotos dokumentiert.' },
+        { icon: 'Ruler', title: 'Standzeit-Tracking', desc: 'Auf- und Abbaudatum pro Gerüst. Automatische Berechnung der Standzeit und Mietkosten.' },
+        { icon: 'HardHat', title: 'Personalplanung', desc: 'Qualifikationen, Verfügbarkeiten und Einsatzplanung für Ihre Kolonne.' },
+        { icon: 'CalendarDays', title: 'Morgenplanung', desc: 'Tagesplan für alle Teams: Welche Baustelle, welches Material, welcher LKW.' },
+        { icon: 'AlertTriangle', title: 'Mängelmanagement', desc: 'Festgestellte Mängel dokumentieren, zuweisen und nachverfolgen — bis zur Behebung.' },
+        { icon: 'Wrench', title: 'Fahrzeuge & Geräte', desc: 'TÜV, Prüffristen und Wartung für Fahrzeuge, Anhänger und Materialcontainer.' },
     ],
     dashboardStats: [
         { label: 'Aktive Baustellen', value: '15' },
@@ -205,12 +198,12 @@ export const sanitaerHeizung: IndustryConfig = {
         { title: 'Stundenzettel im Handschuhfach', desc: 'Arbeitszeiten werden am Ende der Woche aus dem Gedächtnis rekonstruiert. Abrechnungen sind ungenau.' },
     ],
     features: [
-        { icon: Droplets, title: 'Auftragsmanagement', desc: 'Störungsmeldungen, Wartungen und Neuinstallationen in einem System verwalten.' },
-        { icon: Thermometer, title: 'Wartungsplanung', desc: 'Wiederkehrende Wartungstermine automatisch planen. Kunden rechtzeitig erinnern.' },
-        { icon: Package, title: 'Materialverwaltung', desc: 'Fittings, Rohre und Ersatzteile. Verbrauch pro Auftrag erfassen und nachbestellen.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'Digitale Stempeluhr mit Projektzuordnung. Fahrzeiten und Arbeitszeiten getrennt.' },
-        { icon: Camera, title: 'Fotodokumentation', desc: 'Vorher-Nachher-Fotos, Rohrleitungspläne und Mängelbilder direkt im Auftrag.' },
-        { icon: BarChart3, title: 'Nachkalkulation', desc: 'Was hat der Auftrag wirklich gekostet? Material, Stunden und Fahrtkosten im Vergleich.' },
+        { icon: 'Droplets', title: 'Auftragsmanagement', desc: 'Störungsmeldungen, Wartungen und Neuinstallationen in einem System verwalten.' },
+        { icon: 'Thermometer', title: 'Wartungsplanung', desc: 'Wiederkehrende Wartungstermine automatisch planen. Kunden rechtzeitig erinnern.' },
+        { icon: 'Package', title: 'Materialverwaltung', desc: 'Fittings, Rohre und Ersatzteile. Verbrauch pro Auftrag erfassen und nachbestellen.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'Digitale Stempeluhr mit Projektzuordnung. Fahrzeiten und Arbeitszeiten getrennt.' },
+        { icon: 'Camera', title: 'Fotodokumentation', desc: 'Vorher-Nachher-Fotos, Rohrleitungspläne und Mängelbilder direkt im Auftrag.' },
+        { icon: 'BarChart3', title: 'Nachkalkulation', desc: 'Was hat der Auftrag wirklich gekostet? Material, Stunden und Fahrtkosten im Vergleich.' },
     ],
     dashboardStats: [
         { label: 'Offene Aufträge', value: '17' },
@@ -249,12 +242,12 @@ export const elektrobetriebe: IndustryConfig = {
         { title: 'Angebotskalkulation zu aufwendig', desc: 'Jedes Angebot wird manuell kalkuliert. Erfahrungswerte aus alten Projekten sind nicht greifbar.' },
     ],
     features: [
-        { icon: Zap, title: 'E-Check Protokolle', desc: 'Digitale Prüfberichte nach VDE. Messwerte, Fotos und Ergebnisse strukturiert erfasst.' },
-        { icon: CircuitBoard, title: 'Prüffristen', desc: 'DGUV V3, E-Checks und Wiederholungsprüfungen im Blick. Automatische Fristüberwachung.' },
-        { icon: Package, title: 'Materialverwaltung', desc: 'Kabel, Dosen, Sicherungen — Bestände führen und Verbrauch auf Projekte buchen.' },
-        { icon: Calculator, title: 'Nachkalkulation', desc: 'Projekt-Profitabilität auswerten. Material, Stunden und Fahrtkosten im Überblick.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'Digitale Stempeluhr pro Auftrag. Arbeitszeitnachweise per Knopfdruck exportieren.' },
-        { icon: FileText, title: 'Dokumentation', desc: 'Schaltpläne, Messprotokolle und Abnahmen zentral ablegen und wiederfinden.' },
+        { icon: 'Zap', title: 'E-Check Protokolle', desc: 'Digitale Prüfberichte nach VDE. Messwerte, Fotos und Ergebnisse strukturiert erfasst.' },
+        { icon: 'CircuitBoard', title: 'Prüffristen', desc: 'DGUV V3, E-Checks und Wiederholungsprüfungen im Blick. Automatische Fristüberwachung.' },
+        { icon: 'Package', title: 'Materialverwaltung', desc: 'Kabel, Dosen, Sicherungen — Bestände führen und Verbrauch auf Projekte buchen.' },
+        { icon: 'Calculator', title: 'Nachkalkulation', desc: 'Projekt-Profitabilität auswerten. Material, Stunden und Fahrtkosten im Überblick.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'Digitale Stempeluhr pro Auftrag. Arbeitszeitnachweise per Knopfdruck exportieren.' },
+        { icon: 'FileText', title: 'Dokumentation', desc: 'Schaltpläne, Messprotokolle und Abnahmen zentral ablegen und wiederfinden.' },
     ],
     dashboardStats: [
         { label: 'Aktive Projekte', value: '11' },
@@ -293,12 +286,12 @@ export const krankentransport: IndustryConfig = {
         { title: 'Fahrzeugverfügbarkeit unklar', desc: 'TÜV, Desinfektion, Wartung — ohne Übersicht stehen Fahrzeuge still, wenn sie gebraucht werden.' },
     ],
     features: [
-        { icon: Stethoscope, title: 'Einsatzplanung', desc: 'Transporte disponieren, Personal zuweisen und Fahrzeuge koordinieren — alles in einem System.' },
-        { icon: Users, title: 'Personalplanung', desc: 'Qualifikationen (RS, RA, NotSan), Verfügbarkeiten und Schichtpläne verwalten.' },
-        { icon: Truck, title: 'Fuhrparkmanagement', desc: 'TÜV, Desinfektion, MPG-Prüfungen und Wartung. Alle Fristen im Blick.' },
-        { icon: Navigation, title: 'Tourenplanung', desc: 'Optimierte Reihenfolge für Transportfahrten. Weniger Leerkilometer, mehr Effizienz.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'Schichtzeiten, Bereitschaftsdienste und Pausen lückenlos und rechtssicher erfassen.' },
-        { icon: FileText, title: 'Transportprotokolle', desc: 'Digitale Dokumentation jedes Transports. Patientendaten, Übergaben und Besonderheiten.' },
+        { icon: 'Stethoscope', title: 'Einsatzplanung', desc: 'Transporte disponieren, Personal zuweisen und Fahrzeuge koordinieren — alles in einem System.' },
+        { icon: 'Users', title: 'Personalplanung', desc: 'Qualifikationen (RS, RA, NotSan), Verfügbarkeiten und Schichtpläne verwalten.' },
+        { icon: 'Truck', title: 'Fuhrparkmanagement', desc: 'TÜV, Desinfektion, MPG-Prüfungen und Wartung. Alle Fristen im Blick.' },
+        { icon: 'Navigation', title: 'Tourenplanung', desc: 'Optimierte Reihenfolge für Transportfahrten. Weniger Leerkilometer, mehr Effizienz.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'Schichtzeiten, Bereitschaftsdienste und Pausen lückenlos und rechtssicher erfassen.' },
+        { icon: 'FileText', title: 'Transportprotokolle', desc: 'Digitale Dokumentation jedes Transports. Patientendaten, Übergaben und Besonderheiten.' },
     ],
     dashboardStats: [
         { label: 'Transporte heute', value: '34' },
@@ -337,12 +330,12 @@ export const reinigungsunternehmen: IndustryConfig = {
         { title: 'Hohe Personalfluktuation', desc: 'Neue Mitarbeiter einarbeiten kostet Zeit. Ohne Checklisten und Standards geht Qualität verloren.' },
     ],
     features: [
-        { icon: Building2, title: 'Objektverwaltung', desc: 'Alle Reinigungsobjekte mit Plänen, Intervallen und Sonderanforderungen zentral verwalten.' },
-        { icon: ListChecks, title: 'Checklisten', desc: 'Standardisierte Reinigungspläne pro Objekt. Teams arbeiten strukturiert und dokumentiert.' },
-        { icon: SprayCan, title: 'Materialplanung', desc: 'Reinigungsmittel und Verbrauchsmaterial pro Objekt planen und nachbestellen.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'Digitale Stempeluhr pro Objekt. Nachweisbare Anwesenheitszeiten für Auftraggeber.' },
-        { icon: Camera, title: 'Qualitätskontrolle', desc: 'Foto-Dokumentation vor und nach der Reinigung. Mängel erfassen und nachverfolgen.' },
-        { icon: Users, title: 'Personalplanung', desc: 'Schichtpläne, Vertretungen und Einarbeitung neuer Mitarbeiter strukturiert organisieren.' },
+        { icon: 'Building2', title: 'Objektverwaltung', desc: 'Alle Reinigungsobjekte mit Plänen, Intervallen und Sonderanforderungen zentral verwalten.' },
+        { icon: 'ListChecks', title: 'Checklisten', desc: 'Standardisierte Reinigungspläne pro Objekt. Teams arbeiten strukturiert und dokumentiert.' },
+        { icon: 'SprayCan', title: 'Materialplanung', desc: 'Reinigungsmittel und Verbrauchsmaterial pro Objekt planen und nachbestellen.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'Digitale Stempeluhr pro Objekt. Nachweisbare Anwesenheitszeiten für Auftraggeber.' },
+        { icon: 'Camera', title: 'Qualitätskontrolle', desc: 'Foto-Dokumentation vor und nach der Reinigung. Mängel erfassen und nachverfolgen.' },
+        { icon: 'Users', title: 'Personalplanung', desc: 'Schichtpläne, Vertretungen und Einarbeitung neuer Mitarbeiter strukturiert organisieren.' },
     ],
     dashboardStats: [
         { label: 'Aktive Objekte', value: '42' },
@@ -381,12 +374,12 @@ export const gasWasser: IndustryConfig = {
         { title: 'Dokumentation kostet Feierabend', desc: 'Prüfberichte und Arbeitszeiten werden abends im Büro nachgetragen — auf Kosten der Freizeit.' },
     ],
     features: [
-        { icon: Flame, title: 'Gasprüfprotokolle', desc: 'Digitale Dichtheitsprüfungen und Gasgeräteprüfungen. Rechtssicher dokumentiert mit Messwerten und Fotos.' },
-        { icon: Droplets, title: 'Wassertechnik', desc: 'Trinkwasserproben, Legionellenprüfungen und Rohrnetzpläne zentral verwalten.' },
-        { icon: Package, title: 'Materialverwaltung', desc: 'Rohre, Armaturen und Fittings. Bestände führen und Verbrauch pro Auftrag buchen.' },
-        { icon: Thermometer, title: 'Wartungsplanung', desc: 'Wiederkehrende Prüffristen automatisch planen. Kunden erhalten rechtzeitig Terminerinnerungen.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'Digitale Stempeluhr mit Auftragszuordnung. Fahrzeiten und Arbeitszeiten sauber getrennt.' },
-        { icon: BarChart3, title: 'Nachkalkulation', desc: 'Auftragskosten auswerten: Material, Stunden, Fahrtkosten. Profitabilität auf einen Blick.' },
+        { icon: 'Flame', title: 'Gasprüfprotokolle', desc: 'Digitale Dichtheitsprüfungen und Gasgeräteprüfungen. Rechtssicher dokumentiert mit Messwerten und Fotos.' },
+        { icon: 'Droplets', title: 'Wassertechnik', desc: 'Trinkwasserproben, Legionellenprüfungen und Rohrnetzpläne zentral verwalten.' },
+        { icon: 'Package', title: 'Materialverwaltung', desc: 'Rohre, Armaturen und Fittings. Bestände führen und Verbrauch pro Auftrag buchen.' },
+        { icon: 'Thermometer', title: 'Wartungsplanung', desc: 'Wiederkehrende Prüffristen automatisch planen. Kunden rechtzeitig erinnern.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'Digitale Stempeluhr mit Auftragszuordnung. Fahrzeiten und Arbeitszeiten sauber getrennt.' },
+        { icon: 'BarChart3', title: 'Nachkalkulation', desc: 'Auftragskosten auswerten: Material, Stunden, Fahrtkosten. Profitabilität auf einen Blick.' },
     ],
     dashboardStats: [
         { label: 'Offene Aufträge', value: '13' },
@@ -425,12 +418,12 @@ export const weitereGewerke: IndustryConfig = {
         { title: 'Digitalisierung fühlt sich kompliziert an', desc: 'Zu viele Funktionen, zu wenig Relevanz für den Alltag. Mitarbeiter nutzen das Tool nicht.' },
     ],
     features: [
-        { icon: FileText, title: 'Projektmanagement', desc: 'Alle Kundenprojekte verwalten. Status, Termine und Dokumente an einem Ort.' },
-        { icon: Clock, title: 'Zeiterfassung', desc: 'Digitale Stempeluhr mit Projektzuordnung. Arbeitszeiten und Pausen erfassen.' },
-        { icon: CalendarDays, title: 'Morgenplanung', desc: 'Tagesplanung für Teams, Fahrzeuge und Aufträge. Per Drag-and-Drop.' },
-        { icon: Package, title: 'Materialverwaltung', desc: 'Bestände führen, Verbrauch auf Projekte buchen, Nachbestellungen planen.' },
-        { icon: CheckSquare, title: 'Abnahmen & Protokolle', desc: 'Digitale Abnahmen mit Foto, Checkliste und Kundenunterschrift.' },
-        { icon: BarChart3, title: 'Auswertungen', desc: 'Nachkalkulation, Produktivitätsanalysen und Berichte auf Knopfdruck.' },
+        { icon: 'FileText', title: 'Projektmanagement', desc: 'Alle Kundenprojekte verwalten. Status, Termine und Dokumente an einem Ort.' },
+        { icon: 'Clock', title: 'Zeiterfassung', desc: 'Digitale Stempeluhr mit Projektzuordnung. Arbeitszeiten und Pausen erfassen.' },
+        { icon: 'CalendarDays', title: 'Morgenplanung', desc: 'Tagesplanung für Teams, Fahrzeuge und Aufträge. Per Drag-and-Drop.' },
+        { icon: 'Package', title: 'Materialverwaltung', desc: 'Bestände führen, Verbrauch auf Projekte buchen, Nachbestellungen planen.' },
+        { icon: 'CheckSquare', title: 'Abnahmen & Protokolle', desc: 'Digitale Abnahmen mit Foto, Checkliste und Kundenunterschrift.' },
+        { icon: 'BarChart3', title: 'Auswertungen', desc: 'Nachkalkulation, Produktivitätsanalysen und Berichte auf Knopfdruck.' },
     ],
     dashboardStats: [
         { label: 'Laufende Projekte', value: '14' },

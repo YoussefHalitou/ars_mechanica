@@ -2,7 +2,14 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowRight, ArrowLeft, Star, XCircle } from 'lucide-react'
+import {
+    ArrowRight, ArrowLeft, Star, XCircle,
+    Truck, Clock, ClipboardCheck, Users, Package, MapPin,
+    PaintBucket, Calculator, FileText, BarChart3, Camera, CheckSquare,
+    Shield, Wrench, CalendarDays, HardHat, Ruler, AlertTriangle,
+    Droplets, Thermometer, Zap, CircuitBoard, Stethoscope, Navigation,
+    SprayCan, Building2, ListChecks, Flame
+} from 'lucide-react'
 import { Header } from '@/components/Header'
 import { CTA } from '@/components/CTA'
 import { Footer } from '@/components/Footer'
@@ -134,6 +141,19 @@ function PainPoints({ industry }: { industry: IndustryConfig }) {
 // Section: Industry Features
 // ============================================================================
 
+// ... imports will be updated in next step or combined
+
+const ICON_MAP: Record<string, any> = {
+    Truck, Clock, ClipboardCheck, Users, Package, MapPin,
+    PaintBucket, Calculator, FileText, BarChart3, Camera, CheckSquare,
+    Shield, Wrench, CalendarDays, HardHat, Ruler, AlertTriangle,
+    Droplets, Thermometer, Zap, CircuitBoard, Stethoscope, Navigation,
+    SprayCan, Building2, ListChecks, Flame,
+    ArrowRight, ArrowLeft, Star, XCircle
+}
+
+// ...
+
 function IndustryFeatures({ industry }: { industry: IndustryConfig }) {
     return (
         <section className="py-24 bg-white">
@@ -156,7 +176,7 @@ function IndustryFeatures({ industry }: { industry: IndustryConfig }) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {industry.features.map((f, i) => {
-                        const Icon = f.icon
+                        const Icon = ICON_MAP[f.icon as string] || BarChart3 // Fallback
                         return (
                             <motion.div
                                 key={f.title}
