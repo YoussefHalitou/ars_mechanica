@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useToast } from '@/components/ui/toast';
 import { format } from 'date-fns';
 import {
     Calculator, ChevronDown, Users, Truck, Package, Wrench,
@@ -51,6 +52,7 @@ function calcHours(von: string | null, bis: string | null, pauseMin: number = 0)
 function eur(n: number) { return n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }); }
 
 export default function CalculationPage() {
+    const { toast } = useToast();
     const [projects, setProjects] = useState<Project[]>([]);
     const [selectedProjectId, setSelectedProjectId] = useState<string>('');
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -183,34 +185,46 @@ export default function CalculationPage() {
     // ---- MATERIAL CRUD ----
     const addMaterial = async () => {
         if (!addMatForm.material_id || !selectedProjectId) return;
-        await supabase.from('t_project_material_usage').insert({ project_id: selectedProjectId, material_id: addMatForm.material_id, quantity: addMatForm.quantity });
-        setAddMatModal(false);
-        loadProjectData(selectedProjectId);
+        try {
+            const { error } = await supabase.from('t_project_material_usage').insert({ project_id: selectedProjectId, material_id: addMatForm.material_id, quantity: addMatForm.quantity });
+            if (error) throw error;
+            setAddMatModal(false);
+            toast('Material hinzugefügt');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Hinzufügen', 'error'); }
     };
     const updateMaterialQty = (id: string, qty: number) => {
         setMaterials(prev => prev.map(m => m.id === id ? { ...m, quantity: qty, total_cost: +(qty * m.cost_per_unit).toFixed(2), total_price: +(qty * m.price_per_unit).toFixed(2) } : m));
     };
     const saveMaterials = async () => {
-        for (const m of materials) {
-            if (!m.isNew) await supabase.from('t_project_material_usage').update({ quantity: m.quantity }).eq('id', m.id);
-        }
-        loadProjectData(selectedProjectId);
+        try {
+            await Promise.all(materials.filter(m => !m.isNew).map(m =>
+                supabase.from('t_project_material_usage').update({ quantity: m.quantity }).eq('id', m.id)
+            ));
+            toast('Materialmengen gespeichert');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Speichern', 'error'); }
     };
     const deleteMaterial = async (id: string) => {
-        await supabase.from('t_project_material_usage').delete().eq('id', id);
-        loadProjectData(selectedProjectId);
+        setMaterials(prev => prev.filter(m => m.id !== id));
+        const { error } = await supabase.from('t_project_material_usage').delete().eq('id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); loadProjectData(selectedProjectId); }
     };
 
     // ---- VEHICLE COST CRUD ----
     const addVehicleCost = async () => {
         if (!addVehForm.vehicle_id || !selectedProjectId) return;
-        const total = +(addVehForm.usage_value * addVehForm.cost_per_unit).toFixed(2);
-        await supabase.from('t_project_vehicle_costs').insert({
-            project_id: selectedProjectId, vehicle_id: addVehForm.vehicle_id, usage_type: addVehForm.usage_type,
-            usage_value: addVehForm.usage_value, cost_per_unit: addVehForm.cost_per_unit, total_cost: total, notes: addVehForm.notes || null,
-        });
-        setAddVehModal(false);
-        loadProjectData(selectedProjectId);
+        try {
+            const total = +(addVehForm.usage_value * addVehForm.cost_per_unit).toFixed(2);
+            const { error } = await supabase.from('t_project_vehicle_costs').insert({
+                project_id: selectedProjectId, vehicle_id: addVehForm.vehicle_id, usage_type: addVehForm.usage_type,
+                usage_value: addVehForm.usage_value, cost_per_unit: addVehForm.cost_per_unit, total_cost: total, notes: addVehForm.notes || null,
+            });
+            if (error) throw error;
+            setAddVehModal(false);
+            toast('Fahrzeugkosten hinzugefügt');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Hinzufügen', 'error'); }
     };
     const updateVehicleCost = (id: string, field: string, value: any) => {
         setVehicles(prev => prev.map(v => {
@@ -221,48 +235,70 @@ export default function CalculationPage() {
         }));
     };
     const saveVehicleCosts = async () => {
-        for (const v of vehicles) {
-            await supabase.from('t_project_vehicle_costs').update({ usage_type: v.usage_type, usage_value: v.usage_value, cost_per_unit: v.cost_per_unit, total_cost: v.total_cost, notes: v.notes }).eq('id', v.id);
-        }
-        loadProjectData(selectedProjectId);
+        try {
+            await Promise.all(vehicles.map(v =>
+                supabase.from('t_project_vehicle_costs').update({ usage_type: v.usage_type, usage_value: v.usage_value, cost_per_unit: v.cost_per_unit, total_cost: v.total_cost, notes: v.notes }).eq('id', v.id)
+            ));
+            toast('Fahrzeugkosten gespeichert');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Speichern', 'error'); }
     };
     const deleteVehicleCost = async (id: string) => {
-        await supabase.from('t_project_vehicle_costs').delete().eq('id', id);
-        loadProjectData(selectedProjectId);
+        setVehicles(prev => prev.filter(v => v.id !== id));
+        const { error } = await supabase.from('t_project_vehicle_costs').delete().eq('id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); loadProjectData(selectedProjectId); }
     };
 
     // ---- SERVICE COST CRUD ----
     const addServiceCost = async () => {
         if (!addSvcForm.service_id || !selectedProjectId) return;
-        await supabase.from('t_project_service_usage').insert({
-            project_id: selectedProjectId, service_id: addSvcForm.service_id,
-            quantity: addSvcForm.quantity, supplier: addSvcForm.supplier || null,
-        });
-        setAddSvcModal(false);
-        loadProjectData(selectedProjectId);
+        try {
+            const { error } = await supabase.from('t_project_service_usage').insert({
+                project_id: selectedProjectId, service_id: addSvcForm.service_id,
+                quantity: addSvcForm.quantity, supplier: addSvcForm.supplier || null,
+            });
+            if (error) throw error;
+            setAddSvcModal(false);
+            toast('Leistung hinzugefügt');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Hinzufügen', 'error'); }
     };
+    const deleteServiceCost = async (id: string) => {
+        setServices(prev => prev.filter(s => s.id !== id));
+        const { error } = await supabase.from('t_project_service_usage').delete().eq('id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); loadProjectData(selectedProjectId); }
+    };
+
     // ---- EXTRA COSTS CRUD ----
     const addExtraCost = async () => {
         if (!selectedProjectId || !addExtraForm.description) return;
-        await supabase.from('t_project_costs_extra').insert({
-            project_id: selectedProjectId, cost_type: addExtraForm.cost_type,
-            description: addExtraForm.description, cost: addExtraForm.cost,
-        });
-        setAddExtraModal(false);
-        loadProjectData(selectedProjectId);
+        try {
+            const { error } = await supabase.from('t_project_costs_extra').insert({
+                project_id: selectedProjectId, cost_type: addExtraForm.cost_type,
+                description: addExtraForm.description, cost: addExtraForm.cost,
+            });
+            if (error) throw error;
+            setAddExtraModal(false);
+            toast('Sonderkosten hinzugefügt');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Hinzufügen', 'error'); }
     };
     const updateExtraCost = (costId: string, field: string, value: any) => {
         setExtraCosts(prev => prev.map(e => e.cost_id === costId ? { ...e, [field]: value } : e));
     };
     const saveExtraCosts = async () => {
-        for (const e of extraCosts) {
-            await supabase.from('t_project_costs_extra').update({ cost_type: e.cost_type, description: e.description, cost: e.cost }).eq('cost_id', e.cost_id);
-        }
-        loadProjectData(selectedProjectId);
+        try {
+            await Promise.all(extraCosts.map(e =>
+                supabase.from('t_project_costs_extra').update({ cost_type: e.cost_type, description: e.description, cost: e.cost }).eq('cost_id', e.cost_id)
+            ));
+            toast('Sonderkosten gespeichert');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Speichern', 'error'); }
     };
     const deleteExtraCost = async (costId: string) => {
-        await supabase.from('t_project_costs_extra').delete().eq('cost_id', costId);
-        loadProjectData(selectedProjectId);
+        setExtraCosts(prev => prev.filter(e => e.cost_id !== costId));
+        const { error } = await supabase.from('t_project_costs_extra').delete().eq('cost_id', costId);
+        if (error) { toast('Fehler beim Löschen', 'error'); loadProjectData(selectedProjectId); }
     };
 
     // ---- DISCOUNT CRUD ----
@@ -274,22 +310,22 @@ export default function CalculationPage() {
     };
     const saveDiscounts = async () => {
         if (!selectedProjectId) return;
-        for (const d of discounts) {
-            const record = { project_id: selectedProjectId, discount_type: d.discount_type, label: d.label, value: d.value };
-            if (d.isNew || d.discount_id.startsWith('temp-')) await supabase.from('t_project_discounts').insert(record);
-            else await supabase.from('t_project_discounts').update(record).eq('discount_id', d.discount_id);
-        }
-        loadProjectData(selectedProjectId);
+        try {
+            await Promise.all(discounts.map(d => {
+                const record = { project_id: selectedProjectId, discount_type: d.discount_type, label: d.label, value: d.value };
+                return d.isNew || d.discount_id.startsWith('temp-')
+                    ? supabase.from('t_project_discounts').insert(record)
+                    : supabase.from('t_project_discounts').update(record).eq('discount_id', d.discount_id);
+            }));
+            toast('Rabatte gespeichert');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Speichern', 'error'); }
     };
     const deleteDiscount = async (id: string) => {
         if (id.startsWith('temp-')) { setDiscounts(prev => prev.filter(d => d.discount_id !== id)); return; }
-        await supabase.from('t_project_discounts').delete().eq('discount_id', id);
-        loadProjectData(selectedProjectId);
-    };
-
-    const deleteServiceCost = async (id: string) => {
-        await supabase.from('t_project_service_usage').delete().eq('id', id);
-        loadProjectData(selectedProjectId);
+        setDiscounts(prev => prev.filter(d => d.discount_id !== id));
+        const { error } = await supabase.from('t_project_discounts').delete().eq('discount_id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); loadProjectData(selectedProjectId); }
     };
 
     // ---- REVENUE CRUD ----
@@ -304,17 +340,22 @@ export default function CalculationPage() {
     };
     const saveRevenue = async () => {
         if (!selectedProjectId) return;
-        for (const r of revenue) {
-            const record = { project_id: selectedProjectId, position_label: r.position_label, qty: r.qty, unit: r.unit, unit_price: r.unit_price, line_total: r.line_total, kind: r.kind };
-            if (r.isNew || r.id.startsWith('temp-')) await supabase.from('t_project_revenue_items').insert(record);
-            else await supabase.from('t_project_revenue_items').update(record).eq('id', r.id);
-        }
-        loadProjectData(selectedProjectId);
+        try {
+            await Promise.all(revenue.map(r => {
+                const record = { project_id: selectedProjectId, position_label: r.position_label, qty: r.qty, unit: r.unit, unit_price: r.unit_price, line_total: r.line_total, kind: r.kind };
+                return r.isNew || r.id.startsWith('temp-')
+                    ? supabase.from('t_project_revenue_items').insert(record)
+                    : supabase.from('t_project_revenue_items').update(record).eq('id', r.id);
+            }));
+            toast('Erlöse gespeichert');
+            loadProjectData(selectedProjectId);
+        } catch { toast('Fehler beim Speichern', 'error'); }
     };
     const deleteRevenue = async (id: string) => {
         if (id.startsWith('temp-')) { setRevenue(prev => prev.filter(r => r.id !== id)); return; }
-        await supabase.from('t_project_revenue_items').delete().eq('id', id);
-        loadProjectData(selectedProjectId);
+        setRevenue(prev => prev.filter(r => r.id !== id));
+        const { error } = await supabase.from('t_project_revenue_items').delete().eq('id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); loadProjectData(selectedProjectId); }
     };
 
     // ---- EXPORT ----

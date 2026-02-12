@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useToast } from '@/components/ui/toast';
+import { useDebounce } from '@/hooks/useDebounce';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import {
@@ -43,6 +45,7 @@ const empty: ProjectInsert = {
 };
 
 export default function ProjectsPage() {
+    const { toast } = useToast();
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -63,20 +66,22 @@ export default function ProjectsPage() {
     const [timePairs, setTimePairs] = useState<any[]>([]);
     const [planEntries, setPlanEntries] = useState<any[]>([]);
 
+    const debouncedSearch = useDebounce(search, 300);
+
     const fetchProjects = useCallback(async () => {
         setLoading(true);
         let query = supabase.from('t_projects').select('*').order('created_at', { ascending: false }).limit(200);
 
         if (filterStatus) query = query.eq('status', filterStatus);
         if (filterService) query = query.ilike('dienstleistungen', `%${filterService}%`);
-        if (search) {
-            query = query.or(`name.ilike.%${search}%,ort.ilike.%${search}%,project_code.ilike.%${search}%,plz.ilike.%${search}%,strasse.ilike.%${search}%`);
+        if (debouncedSearch) {
+            query = query.or(`name.ilike.%${debouncedSearch}%,ort.ilike.%${debouncedSearch}%,project_code.ilike.%${debouncedSearch}%,plz.ilike.%${debouncedSearch}%,strasse.ilike.%${debouncedSearch}%`);
         }
 
         const { data } = await query;
         setProjects(data || []);
         setLoading(false);
-    }, [search, filterService, filterStatus]);
+    }, [debouncedSearch, filterService, filterStatus]);
 
     useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
@@ -137,16 +142,20 @@ export default function ProjectsPage() {
         try {
             if (isEditing && editingProject.project_id) {
                 const { project_id, project_code, ...updateData } = editingProject;
-                await supabase.from('t_projects').update(updateData).eq('project_id', project_id);
+                const { error } = await supabase.from('t_projects').update(updateData).eq('project_id', project_id);
+                if (error) throw error;
+                toast('Projekt aktualisiert');
             } else {
                 const { project_id, project_code, ...insertData } = editingProject;
-                await supabase.from('t_projects').insert(insertData);
+                const { error } = await supabase.from('t_projects').insert(insertData);
+                if (error) throw error;
+                toast('Projekt erstellt');
             }
             setModalOpen(false);
             fetchProjects();
         } catch (err) {
             console.error(err);
-            alert('Fehler beim Speichern!');
+            toast('Fehler beim Speichern', 'error');
         } finally {
             setSaving(false);
         }
@@ -154,27 +163,33 @@ export default function ProjectsPage() {
 
     const handleDelete = async (id: string) => {
         if (!confirm('Projekt wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) return;
-        await supabase.from('t_projects').delete().eq('project_id', id);
+        setProjects(prev => prev.filter(p => p.project_id !== id));
         if (selectedProject?.project_id === id) setSelectedProject(null);
-        fetchProjects();
+        const { error } = await supabase.from('t_projects').delete().eq('project_id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); fetchProjects(); }
     };
 
     // Inline status change from the table
     const handleStatusChange = async (projectId: string, newStatus: string) => {
-        await supabase.from('t_projects').update({ status: newStatus }).eq('project_id', projectId);
         setProjects(prev => prev.map(p => p.project_id === projectId ? { ...p, status: newStatus } : p));
         if (selectedProject?.project_id === projectId) {
             setSelectedProject(prev => prev ? { ...prev, status: newStatus } : null);
         }
+        const { error } = await supabase.from('t_projects').update({ status: newStatus }).eq('project_id', projectId);
+        if (error) { toast('Status-Änderung fehlgeschlagen', 'error'); fetchProjects(); }
     };
 
     // Save notes from detail panel
     const handleSaveNotes = async () => {
         if (!selectedProject) return;
         setSavingNotes(true);
-        await supabase.from('t_projects').update({ notes: projectNotes }).eq('project_id', selectedProject.project_id);
-        setSelectedProject(prev => prev ? { ...prev, notes: projectNotes } : null);
-        setProjects(prev => prev.map(p => p.project_id === selectedProject.project_id ? { ...p, notes: projectNotes } : p));
+        const { error } = await supabase.from('t_projects').update({ notes: projectNotes }).eq('project_id', selectedProject.project_id);
+        if (error) { toast('Fehler beim Speichern der Notizen', 'error'); }
+        else {
+            toast('Notizen gespeichert');
+            setSelectedProject(prev => prev ? { ...prev, notes: projectNotes } : null);
+            setProjects(prev => prev.map(p => p.project_id === selectedProject.project_id ? { ...p, notes: projectNotes } : p));
+        }
         setSavingNotes(false);
     };
 

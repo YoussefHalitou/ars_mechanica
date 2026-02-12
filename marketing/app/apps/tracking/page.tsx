@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/components/ui/toast';
 import { format, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Save, Copy, Loader2, Trash2, Plus, X, Pencil, Briefcase, Clock } from 'lucide-react';
@@ -36,6 +37,7 @@ interface TrackingRow {
 const WORK_TYPES = ['Büroarbeit', 'Lager', 'Werkstatt', 'Reinigung', 'Fahrt', 'Schulung', 'Sonstiges'];
 
 export default function TrackingPage() {
+    const { toast } = useToast();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [rows, setRows] = useState<TrackingRow[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -150,9 +152,9 @@ export default function TrackingPage() {
         setSaving(true);
         const dateStr = format(currentDate, 'yyyy-MM-dd');
         try {
-            for (const row of rows) {
+            await Promise.all(rows.map(row => {
                 const record: any = {
-                    pair_id: row.pair_id || `${row.project_id}-${row.employee_id}-${dateStr}-${Date.now()}`,
+                    pair_id: row.pair_id || `${row.project_id}-${row.employee_id}-${dateStr}-${Date.now()}-${Math.random()}`,
                     project_id: row.project_id,
                     plan_id: row.plan_id,
                     datum: dateStr,
@@ -164,18 +166,20 @@ export default function TrackingPage() {
                     pause_min: row.pause_min,
                     updated_at: new Date().toISOString(),
                 };
-                await supabase.from('t_time_pairs').upsert(record, { onConflict: 'pair_id' });
-            }
+                return supabase.from('t_time_pairs').upsert(record, { onConflict: 'pair_id' });
+            }));
+            toast('Zeiten gespeichert');
             fetchData();
-        } catch (e: any) { alert("Fehler: " + e.message); }
+        } catch { toast('Fehler beim Speichern', 'error'); }
         setSaving(false);
     };
 
     const handleDelete = async (row: TrackingRow) => {
         if (row.isNew) { setRows(prev => prev.filter(r => r._tempId !== row._tempId)); return; }
         if (confirm('Zeiteintrag löschen?') && row.pair_id) {
-            await supabase.from('t_time_pairs').delete().eq('pair_id', row.pair_id);
-            fetchData();
+            setRows(prev => prev.filter(r => r._tempId !== row._tempId));
+            const { error } = await supabase.from('t_time_pairs').delete().eq('pair_id', row.pair_id);
+            if (error) { toast('Fehler beim Löschen', 'error'); fetchData(); }
         }
     };
 
@@ -205,34 +209,40 @@ export default function TrackingPage() {
     const saveWa = async () => {
         if (!waForm.employee_name || !waForm.work_type) return;
         setSavingWa(true);
-        const payload = {
-            work_type: waForm.work_type,
-            employee_name: waForm.employee_name,
-            employee_code: waForm.employee_code || null,
-            assignment_date: waForm.assignment_date,
-            start_time: waForm.start_time ? `${waForm.start_time}:00` : null,
-            end_time: waForm.end_time ? `${waForm.end_time}:00` : null,
-            break_minutes: waForm.break_minutes,
-            hours_estimated: waForm.hours_estimated,
-            status: waForm.status,
-            notes: waForm.notes || null,
-        };
+        try {
+            const payload = {
+                work_type: waForm.work_type,
+                employee_name: waForm.employee_name,
+                employee_code: waForm.employee_code || null,
+                assignment_date: waForm.assignment_date,
+                start_time: waForm.start_time ? `${waForm.start_time}:00` : null,
+                end_time: waForm.end_time ? `${waForm.end_time}:00` : null,
+                break_minutes: waForm.break_minutes,
+                hours_estimated: waForm.hours_estimated,
+                status: waForm.status,
+                notes: waForm.notes || null,
+            };
 
-        if (waModal?.mode === 'create') {
-            await supabase.from('t_work_assignments').insert(payload);
-        } else if (waModal?.item) {
-            await supabase.from('t_work_assignments').update(payload).eq('assignment_id', waModal.item.assignment_id);
-        }
-
+            if (waModal?.mode === 'create') {
+                const { error } = await supabase.from('t_work_assignments').insert(payload);
+                if (error) throw error;
+                toast('Arbeitseinsatz erstellt');
+            } else if (waModal?.item) {
+                const { error } = await supabase.from('t_work_assignments').update(payload).eq('assignment_id', waModal.item.assignment_id);
+                if (error) throw error;
+                toast('Arbeitseinsatz aktualisiert');
+            }
+            setWaModal(null);
+            fetchData();
+        } catch { toast('Fehler beim Speichern', 'error'); }
         setSavingWa(false);
-        setWaModal(null);
-        fetchData();
     };
 
     const deleteWa = async (id: string) => {
         if (!confirm('Arbeitseinsatz löschen?')) return;
-        await supabase.from('t_work_assignments').delete().eq('assignment_id', id);
-        fetchData();
+        setWorkAssignments(prev => prev.filter(w => w.assignment_id !== id));
+        const { error } = await supabase.from('t_work_assignments').delete().eq('assignment_id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); fetchData(); }
     };
 
     const calcWaHours = (st: string | null, et: string | null, brk: number | null) => {

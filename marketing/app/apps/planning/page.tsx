@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/components/ui/toast';
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import {
@@ -99,6 +100,7 @@ function DroppableDay({ day, plans, onDelete, onOpenStaff, onEditPlan }: {
 
 // ================ MAIN PAGE ================
 export default function PlanningPage() {
+    const { toast } = useToast();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [projects, setProjects] = useState<Project[]>([]);
     const [plans, setPlans] = useState<MorningPlan[]>([]);
@@ -225,26 +227,30 @@ export default function PlanningPage() {
     const savePlan = async () => {
         if (!planForm.project_id || !planModal) return;
         setSavingPlan(true);
+        try {
+            const payload = {
+                plan_date: planModal.date,
+                project_id: planForm.project_id,
+                start_time: planForm.start_time || '07:00',
+                vehicle_id: planForm.vehicle_id || null,
+                vehicle_names: planForm.vehicle_names || null,
+                service_type: planForm.service_type || null,
+                notes: planForm.notes || null,
+            };
 
-        const payload = {
-            plan_date: planModal.date,
-            project_id: planForm.project_id,
-            start_time: planForm.start_time || '07:00',
-            vehicle_id: planForm.vehicle_id || null,
-            vehicle_names: planForm.vehicle_names || null,
-            service_type: planForm.service_type || null,
-            notes: planForm.notes || null,
-        };
-
-        if (planModal.mode === 'create') {
-            await supabase.from('t_morningplan').insert(payload);
-        } else if (planModal.plan) {
-            await supabase.from('t_morningplan').update(payload).eq('plan_id', planModal.plan.plan_id);
-        }
-
+            if (planModal.mode === 'create') {
+                const { error } = await supabase.from('t_morningplan').insert(payload);
+                if (error) throw error;
+                toast('Einsatz erstellt');
+            } else if (planModal.plan) {
+                const { error } = await supabase.from('t_morningplan').update(payload).eq('plan_id', planModal.plan.plan_id);
+                if (error) throw error;
+                toast('Einsatz aktualisiert');
+            }
+            setPlanModal(null);
+            fetchData();
+        } catch { toast('Fehler beim Speichern', 'error'); }
         setSavingPlan(false);
-        setPlanModal(null);
-        fetchData();
     };
 
     const handleDeletePlan = async (planId: string) => {
@@ -252,7 +258,7 @@ export default function PlanningPage() {
         const prev = [...plans];
         setPlans(p => p.filter(x => x.plan_id !== planId));
         const { error } = await supabase.from('t_morningplan').delete().eq('plan_id', planId);
-        if (error) { setPlans(prev); alert("Fehler: " + error.message); }
+        if (error) { setPlans(prev); toast('Fehler beim Löschen', 'error'); }
     };
 
     // ---- STAFF MODAL ----
@@ -270,34 +276,32 @@ export default function PlanningPage() {
     const saveStaff = async () => {
         if (!staffModalPlan) return;
         setSavingStaff(true);
-        // Delete existing
-        await supabase.from('t_morningplan_staff').delete().eq('plan_id', staffModalPlan.plan_id);
-        // Insert new
-        const inserts = staffSelection.filter(s => s.employee_id).map((s, i) => ({
-            plan_id: staffModalPlan.plan_id,
-            employee_id: s.employee_id,
-            individual_start_time: s.start_time || null,
-            member_notes: s.notes || null,
-            sort_order: i,
-        }));
-        if (inserts.length > 0) {
-            await supabase.from('t_morningplan_staff').insert(inserts);
+        try {
+            // Delete existing
+            await supabase.from('t_morningplan_staff').delete().eq('plan_id', staffModalPlan.plan_id);
+            // Insert new
+            const inserts = staffSelection.filter(s => s.employee_id).map((s, i) => ({
+                plan_id: staffModalPlan.plan_id,
+                employee_id: s.employee_id,
+                individual_start_time: s.start_time || null,
+                member_notes: s.notes || null,
+                sort_order: i,
+            }));
+            if (inserts.length > 0) {
+                const { error } = await supabase.from('t_morningplan_staff').insert(inserts);
+                if (error) throw error;
 
-            // Auto-create time pairs for each new staff member
-            const project = staffModalPlan.project;
-            if (project) {
-                for (const ins of inserts) {
-                    const emp = employees.find(e => e.employee_id === ins.employee_id);
-                    if (emp) {
-                        // Check if time pair already exists
+                // Auto-create time pairs for each new staff member
+                const project = staffModalPlan.project;
+                if (project) {
+                    await Promise.all(inserts.map(async (ins) => {
+                        const emp = employees.find(e => e.employee_id === ins.employee_id);
+                        if (!emp) return;
                         const { data: existing } = await supabase
-                            .from('t_time_pairs')
-                            .select('pair_id')
+                            .from('t_time_pairs').select('pair_id')
                             .eq('project_id', project.project_id)
                             .eq('datum', staffModalPlan.plan_date)
-                            .eq('mitarbeiter', emp.name)
-                            .limit(1);
-
+                            .eq('mitarbeiter', emp.name).limit(1);
                         if (!existing || existing.length === 0) {
                             await supabase.from('t_time_pairs').insert({
                                 project_id: project.project_id,
@@ -305,30 +309,33 @@ export default function PlanningPage() {
                                 datum: staffModalPlan.plan_date,
                                 mitarbeiter: emp.name,
                                 lis_von: ins.individual_start_time || staffModalPlan.start_time || '07:00:00',
-                                lis_bis: null,
-                                kunde_von: null,
-                                kunde_bis: null,
-                                pause_min: 0,
+                                lis_bis: null, kunde_von: null, kunde_bis: null, pause_min: 0,
                             });
                         }
-                    }
+                    }));
                 }
             }
-        }
+            toast('Team gespeichert');
+            setStaffModalPlan(null);
+            fetchData();
+        } catch { toast('Fehler beim Speichern', 'error'); }
         setSavingStaff(false);
-        setStaffModalPlan(null);
-        fetchData();
     };
 
     // ---- VEHICLE STATUS ----
     const saveVehicleStatus = async (vId: string, vName: string, status: string, info: string) => {
-        const existing = vehicleStatuses.find(v => v.vehicle_name === vName && v.plan_date === selectedDay);
-        if (existing) {
-            await supabase.from('t_vehicle_daily_status').update({ status, informationen: info }).eq('id', existing.id);
-        } else {
-            await supabase.from('t_vehicle_daily_status').insert({ vehicle_name: vName, vehicle_id: vId, plan_date: selectedDay, status, informationen: info });
-        }
-        fetchDayPanels();
+        try {
+            const existing = vehicleStatuses.find(v => v.vehicle_name === vName && v.plan_date === selectedDay);
+            if (existing) {
+                const { error } = await supabase.from('t_vehicle_daily_status').update({ status, informationen: info }).eq('id', existing.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('t_vehicle_daily_status').insert({ vehicle_name: vName, vehicle_id: vId, plan_date: selectedDay, status, informationen: info });
+                if (error) throw error;
+            }
+            toast('Fahrzeugstatus gespeichert');
+            fetchDayPanels();
+        } catch { toast('Fehler beim Speichern', 'error'); }
     };
 
     // ---- EMPLOYEE NOTES CRUD ----
@@ -343,26 +350,33 @@ export default function PlanningPage() {
     const saveNote = async () => {
         if (!editingNote) return;
         setSavingNote(true);
-        if (editingNote.id) {
-            await supabase.from('t_employee_daily_notes').update({ notizen: editingNote.notizen }).eq('id', editingNote.id);
-        } else {
-            const maxOrder = employeeNotes.reduce((max, n) => Math.max(max, n.sort_order || 0), 0);
-            await supabase.from('t_employee_daily_notes').insert({
-                employee_code: editingNote.employee_code,
-                plan_date: selectedDay,
-                notizen: editingNote.notizen,
-                sort_order: maxOrder + 1,
-            });
-        }
+        try {
+            if (editingNote.id) {
+                const { error } = await supabase.from('t_employee_daily_notes').update({ notizen: editingNote.notizen }).eq('id', editingNote.id);
+                if (error) throw error;
+                toast('Notiz aktualisiert');
+            } else {
+                const maxOrder = employeeNotes.reduce((max, n) => Math.max(max, n.sort_order || 0), 0);
+                const { error } = await supabase.from('t_employee_daily_notes').insert({
+                    employee_code: editingNote.employee_code,
+                    plan_date: selectedDay,
+                    notizen: editingNote.notizen,
+                    sort_order: maxOrder + 1,
+                });
+                if (error) throw error;
+                toast('Notiz erstellt');
+            }
+            setEditingNote(null);
+            fetchDayPanels();
+        } catch { toast('Fehler beim Speichern', 'error'); }
         setSavingNote(false);
-        setEditingNote(null);
-        fetchDayPanels();
     };
 
     const deleteNote = async (id: number) => {
         if (!confirm('Notiz löschen?')) return;
-        await supabase.from('t_employee_daily_notes').delete().eq('id', id);
-        fetchDayPanels();
+        setEmployeeNotes(prev => prev.filter(n => n.id !== id));
+        const { error } = await supabase.from('t_employee_daily_notes').delete().eq('id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); fetchDayPanels(); }
     };
 
     // ---- EXPORT ----

@@ -1,4 +1,7 @@
+'use client';
+
 import { AppSidebar } from '@/components/app-sidebar';
+import { ToastProvider } from '@/components/ui/toast';
 
 export default function AppsLayout({
     children,
@@ -6,11 +9,13 @@ export default function AppsLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div className="flex h-screen w-full bg-slate-50">
-            <AppSidebar />
-            <div className="flex-1 overflow-hidden flex flex-col">
-                {children}
+        <ToastProvider>
+            <div className="flex h-screen w-full bg-slate-50">
+                <AppSidebar />
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    {children}
+                </div>
             </div>
-        </div>
+        </ToastProvider>
     );
 }

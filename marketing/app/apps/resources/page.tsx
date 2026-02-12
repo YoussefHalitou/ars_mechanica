@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useToast } from '@/components/ui/toast';
 import {
     Users, Truck, Package, Wrench, Plus, Pencil, Trash2, X, Save, Loader2, Check
 } from 'lucide-react';
@@ -55,6 +56,7 @@ export default function ResourcesPage() {
 // ============ EMPLOYEES TAB ============
 
 function EmployeesTab() {
+    const { toast } = useToast();
     const [items, setItems] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<Partial<Employee> | null>(null);
@@ -76,32 +78,39 @@ function EmployeesTab() {
     const save = async () => {
         if (!editing?.name) return;
         setSaving(true);
-        if (isNew) {
-            await supabase.from('t_employees').insert({
-                name: editing.name,
-                employee_code: editing.employee_code || null,
-                email: editing.email || null,
-                phone: editing.phone || null,
-                role: editing.role || null,
-                contract_type: editing.contract_type || null,
-                weekly_hours_contract: editing.weekly_hours_contract || null,
-                hourly_rate: editing.hourly_rate || null,
-                notes: editing.notes || null,
-                is_active: editing.is_active ?? true,
-            });
-        } else {
-            const { employee_id, created_at, updated_at, ...upd } = editing as Employee;
-            await supabase.from('t_employees').update(upd).eq('employee_id', employee_id);
-        }
+        try {
+            if (isNew) {
+                const { error } = await supabase.from('t_employees').insert({
+                    name: editing.name,
+                    employee_code: editing.employee_code || null,
+                    email: editing.email || null,
+                    phone: editing.phone || null,
+                    role: editing.role || null,
+                    contract_type: editing.contract_type || null,
+                    weekly_hours_contract: editing.weekly_hours_contract || null,
+                    hourly_rate: editing.hourly_rate || null,
+                    notes: editing.notes || null,
+                    is_active: editing.is_active ?? true,
+                });
+                if (error) throw error;
+                toast('Mitarbeiter erstellt');
+            } else {
+                const { employee_id, created_at, updated_at, ...upd } = editing as Employee;
+                const { error } = await supabase.from('t_employees').update(upd).eq('employee_id', employee_id);
+                if (error) throw error;
+                toast('Mitarbeiter aktualisiert');
+            }
+            setEditing(null);
+            fetch();
+        } catch { toast('Fehler beim Speichern', 'error'); }
         setSaving(false);
-        setEditing(null);
-        fetch();
     };
 
     const remove = async (id: string) => {
         if (!confirm('Mitarbeiter wirklich löschen?')) return;
-        await supabase.from('t_employees').delete().eq('employee_id', id);
-        fetch();
+        setItems(prev => prev.filter(e => e.employee_id !== id));
+        const { error } = await supabase.from('t_employees').delete().eq('employee_id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); fetch(); }
     };
 
     if (loading) return <LoadingSpinner />;
@@ -170,6 +179,7 @@ function EmployeesTab() {
 // ============ VEHICLES TAB ============
 
 function VehiclesTab() {
+    const { toast } = useToast();
     const [items, setItems] = useState<Vehicle[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<Partial<Vehicle> | null>(null);
@@ -191,29 +201,36 @@ function VehiclesTab() {
     const save = async () => {
         if (!editing?.nickname) return;
         setSaving(true);
-        if (isNew) {
-            await supabase.from('t_vehicles').insert({
-                vehicle_id: editing.vehicle_id || `v-${Date.now()}`,
-                nickname: editing.nickname,
-                unit: editing.unit || null,
-                status: editing.status || null,
-                inhalt: editing.inhalt || null,
-                notes: editing.notes || null,
-                is_deleted: false,
-            });
-        } else {
-            const { created_at, updated_at, ...upd } = editing as Vehicle;
-            await supabase.from('t_vehicles').update(upd).eq('vehicle_id', editing.vehicle_id);
-        }
+        try {
+            if (isNew) {
+                const { error } = await supabase.from('t_vehicles').insert({
+                    vehicle_id: editing.vehicle_id || `v-${Date.now()}`,
+                    nickname: editing.nickname,
+                    unit: editing.unit || null,
+                    status: editing.status || null,
+                    inhalt: editing.inhalt || null,
+                    notes: editing.notes || null,
+                    is_deleted: false,
+                });
+                if (error) throw error;
+                toast('Fahrzeug erstellt');
+            } else {
+                const { created_at, updated_at, ...upd } = editing as Vehicle;
+                const { error } = await supabase.from('t_vehicles').update(upd).eq('vehicle_id', editing.vehicle_id);
+                if (error) throw error;
+                toast('Fahrzeug aktualisiert');
+            }
+            setEditing(null);
+            fetch();
+        } catch { toast('Fehler beim Speichern', 'error'); }
         setSaving(false);
-        setEditing(null);
-        fetch();
     };
 
     const remove = async (id: string) => {
         if (!confirm('Fahrzeug wirklich löschen?')) return;
-        await supabase.from('t_vehicles').update({ is_deleted: true }).eq('vehicle_id', id);
-        fetch();
+        setItems(prev => prev.filter(v => v.vehicle_id !== id));
+        const { error } = await supabase.from('t_vehicles').update({ is_deleted: true }).eq('vehicle_id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); fetch(); }
     };
 
     if (loading) return <LoadingSpinner />;
@@ -267,6 +284,7 @@ function VehiclesTab() {
 }
 
 function MaterialsTab() {
+    const { toast } = useToast();
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<any | null>(null);
@@ -291,25 +309,33 @@ function MaterialsTab() {
     const save = async () => {
         if (!editing?.name) return;
         setSaving(true);
-        if (isNew) {
-            const id = editing.material_id || `MAT-${Date.now()}`;
-            await supabase.from('t_materials').insert({
-                material_id: id, name: editing.name, unit: editing.unit || 'Stk',
-                category: editing.category || null, vat_rate: editing.vat_rate || 19, is_active: true,
-            });
-        } else {
-            await supabase.from('t_materials').update({
-                name: editing.name, unit: editing.unit, category: editing.category,
-                vat_rate: editing.vat_rate,
-            }).eq('material_id', editing.material_id);
-        }
-        setSaving(false); setEditing(null); fetch();
+        try {
+            if (isNew) {
+                const id = editing.material_id || `MAT-${Date.now()}`;
+                const { error } = await supabase.from('t_materials').insert({
+                    material_id: id, name: editing.name, unit: editing.unit || 'Stk',
+                    category: editing.category || null, vat_rate: editing.vat_rate || 19, is_active: true,
+                });
+                if (error) throw error;
+                toast('Material erstellt');
+            } else {
+                const { error } = await supabase.from('t_materials').update({
+                    name: editing.name, unit: editing.unit, category: editing.category,
+                    vat_rate: editing.vat_rate,
+                }).eq('material_id', editing.material_id);
+                if (error) throw error;
+                toast('Material aktualisiert');
+            }
+            setEditing(null); fetch();
+        } catch { toast('Fehler beim Speichern', 'error'); }
+        setSaving(false);
     };
 
     const remove = async (id: string) => {
         if (!confirm('Material wirklich löschen?')) return;
-        await supabase.from('t_materials').update({ is_active: false }).eq('material_id', id);
-        fetch();
+        setItems(prev => prev.filter(m => m.material_id !== id));
+        const { error } = await supabase.from('t_materials').update({ is_active: false }).eq('material_id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); fetch(); }
     };
 
     if (loading) return <LoadingSpinner />;
@@ -367,6 +393,7 @@ function MaterialsTab() {
 }
 
 function ServicesTab() {
+    const { toast } = useToast();
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<any | null>(null);
@@ -391,24 +418,32 @@ function ServicesTab() {
     const save = async () => {
         if (!editing?.name) return;
         setSaving(true);
-        if (isNew) {
-            const id = editing.service_id || `SVC-${Date.now()}`;
-            await supabase.from('t_services').insert({
-                service_id: id, name: editing.name, default_unit: editing.default_unit || 'Std',
-                category: editing.category || null, is_active: true,
-            });
-        } else {
-            await supabase.from('t_services').update({
-                name: editing.name, default_unit: editing.default_unit, category: editing.category,
-            }).eq('service_id', editing.service_id);
-        }
-        setSaving(false); setEditing(null); fetch();
+        try {
+            if (isNew) {
+                const id = editing.service_id || `SVC-${Date.now()}`;
+                const { error } = await supabase.from('t_services').insert({
+                    service_id: id, name: editing.name, default_unit: editing.default_unit || 'Std',
+                    category: editing.category || null, is_active: true,
+                });
+                if (error) throw error;
+                toast('Leistung erstellt');
+            } else {
+                const { error } = await supabase.from('t_services').update({
+                    name: editing.name, default_unit: editing.default_unit, category: editing.category,
+                }).eq('service_id', editing.service_id);
+                if (error) throw error;
+                toast('Leistung aktualisiert');
+            }
+            setEditing(null); fetch();
+        } catch { toast('Fehler beim Speichern', 'error'); }
+        setSaving(false);
     };
 
     const remove = async (id: string) => {
         if (!confirm('Leistung wirklich löschen?')) return;
-        await supabase.from('t_services').update({ is_active: false }).eq('service_id', id);
-        fetch();
+        setItems(prev => prev.filter(s => s.service_id !== id));
+        const { error } = await supabase.from('t_services').update({ is_active: false }).eq('service_id', id);
+        if (error) { toast('Fehler beim Löschen', 'error'); fetch(); }
     };
 
     if (loading) return <LoadingSpinner />;
