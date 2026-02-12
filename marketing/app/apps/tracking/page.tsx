@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { format, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Save, Copy, Loader2, Trash2, Plus, X, Pencil, Briefcase, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Copy, Loader2, Trash2, Plus, X, Pencil, Briefcase, Clock, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
@@ -333,9 +333,20 @@ export default function TrackingPage() {
                 <div className="flex items-center gap-4">
                     {viewMode === 'day' ? (
                         <div className="flex items-center gap-2 rounded-md border bg-white px-2 py-1">
-                            <button onClick={() => setCurrentDate(addDays(currentDate, -1))} className="p-1 hover:bg-slate-100 rounded"><ChevronLeft className="h-5 w-5 text-slate-600" /></button>
-                            <span className="min-w-[140px] text-center font-medium text-slate-700">{format(currentDate, 'EEEE, d. MMM', { locale: de })}</span>
-                            <button onClick={() => setCurrentDate(addDays(currentDate, 1))} className="p-1 hover:bg-slate-100 rounded"><ChevronRight className="h-5 w-5 text-slate-600" /></button>
+                            <button onClick={() => setCurrentDate(addDays(currentDate, -1))} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600"><ChevronLeft className="h-5 w-5" /></button>
+                            <div className="relative group min-w-[140px] text-center">
+                                <div className="flex items-center justify-center gap-2 font-medium text-slate-700 group-hover:text-blue-600 transition-colors cursor-pointer">
+                                    <Calendar className="h-4 w-4 text-slate-400 group-hover:text-blue-500" />
+                                    <span>{format(currentDate, 'EEEE, d. MMM', { locale: de })}</span>
+                                </div>
+                                <input
+                                    type="date"
+                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                    value={format(currentDate, 'yyyy-MM-dd')}
+                                    onChange={(e) => e.target.value && setCurrentDate(new Date(e.target.value))}
+                                />
+                            </div>
+                            <button onClick={() => setCurrentDate(addDays(currentDate, 1))} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600"><ChevronRight className="h-5 w-5" /></button>
                         </div>
                     ) : (
                         <div className="w-72">

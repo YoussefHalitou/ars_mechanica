@@ -6,12 +6,12 @@ import { format } from 'date-fns';
 import {
     Calculator, ChevronDown, Users, Truck, Package, Wrench,
     TrendingUp, DollarSign, Loader2, Plus, Trash2, Save, FileText, X, Pencil,
-    AlertCircle, Percent
+    AlertCircle, Percent, Search, Calendar, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+
 
 type Project = Database['public']['Tables']['t_projects']['Row'];
 
@@ -81,6 +81,42 @@ export default function CalculationPage() {
     const [addExtraForm, setAddExtraForm] = useState({ cost_type: 'Sonstiges', description: '', cost: 0 });
     const [addSvcModal, setAddSvcModal] = useState(false);
     const [addSvcForm, setAddSvcForm] = useState({ service_id: '', quantity: 1, unit: 'Std', cost_per_unit: 0, supplier: '' });
+
+    // Sidebar State
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [projectSearch, setProjectSearch] = useState('');
+    const [projectFilterStart, setProjectFilterStart] = useState('');
+    const [projectFilterEnd, setProjectFilterEnd] = useState('');
+
+    const filteredProjects = useMemo(() => {
+        let res = [...projects];
+        // Sort by date desc (recent first)
+        res.sort((a, b) => {
+            const dateA = a.project_date ? new Date(a.project_date).getTime() : 0;
+            const dateB = b.project_date ? new Date(b.project_date).getTime() : 0;
+            // Descending order
+            if (dateA === 0 && dateB === 0) return 0;
+            if (dateA === 0) return 1;
+            if (dateB === 0) return -1;
+            return dateB - dateA;
+        });
+
+        if (projectSearch) {
+            const low = projectSearch.toLowerCase();
+            res = res.filter(p =>
+                (p.name?.toLowerCase().includes(low)) ||
+                (p.ort?.toLowerCase().includes(low)) ||
+                (p.project_code?.toLowerCase().includes(low))
+            );
+        }
+        if (projectFilterStart) {
+            res = res.filter(p => p.project_date && p.project_date >= projectFilterStart);
+        }
+        if (projectFilterEnd) {
+            res = res.filter(p => p.project_date && p.project_date <= projectFilterEnd);
+        }
+        return res;
+    }, [projects, projectSearch, projectFilterStart, projectFilterEnd]);
 
     useEffect(() => {
         (async () => {
@@ -394,274 +430,399 @@ export default function CalculationPage() {
     };
 
     return (
-        <div className="flex h-full flex-col bg-slate-50">
-            <header className="flex items-center justify-between border-b bg-white px-6 py-4 shadow-sm">
-                <div className="flex items-center gap-3">
-                    <Calculator className="h-6 w-6 text-slate-700" />
-                    <h1 className="text-2xl font-bold text-slate-800">Nachkalkulation</h1>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="w-[400px]">
-                        <SearchableSelect
-                            options={projects.map(p => ({
-                                value: p.project_id,
-                                label: `${p.project_code ? p.project_code + ' | ' : ''}${p.name || 'Unbenannt'}${p.ort ? ' | ' + p.ort : ''}`
-                            }))}
-                            value={selectedProjectId}
-                            onChange={setSelectedProjectId}
-                            placeholder="Projekt auswählen..."
+        <div className="flex h-full w-full bg-slate-50 overflow-hidden">
+            <aside className={cn(
+                "flex flex-col border-r bg-white transition-all duration-300 ease-in-out shrink-0",
+                sidebarOpen ? "w-80" : "w-0 opacity-0 overflow-hidden"
+            )}>
+                <div className="p-4 border-b space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="font-semibold text-slate-800">Projekte</h2>
+                        <button onClick={() => setSidebarOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-md text-slate-500">
+                            <ChevronLeft className="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                        <input
+                            className="w-full rounded-md border border-slate-200 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all"
+                            placeholder="Suchen..."
+                            value={projectSearch}
+                            onChange={e => setProjectSearch(e.target.value)}
                         />
                     </div>
-                    {selectedProject && <button onClick={exportHTML} className="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 shadow-sm"><FileText className="h-4 w-4" /> Export</button>}
-                </div>
-            </header>
 
-            {loading ? (
-                <div className="flex-1 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-slate-400" /></div>
-            ) : !selectedProject ? (
-                <div className="flex-1 flex items-center justify-center text-slate-400"><div className="text-center"><Calculator className="h-16 w-16 mx-auto mb-4 opacity-30" /><p className="text-lg">Wähle ein Projekt aus, um die Kalkulation zu starten.</p></div></div>
-            ) : (
-                <div className="flex-1 overflow-auto p-6 space-y-6">
-                    {/* KPI Cards */}
-                    <div className="grid grid-cols-4 gap-4">
-                        <KpiCard label="Gesamtkosten" value={eur(totalCosts)} icon={<DollarSign className="h-5 w-5" />} color="text-slate-800" bgColor="bg-slate-100" />
-                        <KpiCard label="Gesamterlöse" value={eur(totalRevenue)} icon={<TrendingUp className="h-5 w-5" />} color="text-blue-700" bgColor="bg-blue-50" />
-                        <KpiCard label="Marge (€)" value={eur(margin)} icon={<TrendingUp className="h-5 w-5" />}
-                            color={margin >= 0 ? 'text-green-700' : 'text-red-600'} bgColor={margin >= 0 ? 'bg-green-50' : 'bg-red-50'} />
-                        <KpiCard label="Marge (%)" value={`${marginPct.toFixed(1)}%`} icon={<TrendingUp className="h-5 w-5" />}
-                            color={marginPct >= 0 ? 'text-green-700' : 'text-red-600'} bgColor={marginPct >= 0 ? 'bg-green-50' : 'bg-red-50'} />
-                    </div>
-
-                    {/* Personnel Costs */}
-                    <CostSection title="Personalkosten" icon={<Users className="h-5 w-5" />} total={personalKosten} color="blue">
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
-                                <tr><th className="px-4 py-2 text-left">Datum</th><th className="px-4 py-2 text-left">Mitarbeiter</th><th className="px-4 py-2 text-left">Rolle</th>
-                                    <th className="px-4 py-2 text-right">LiS Std.</th><th className="px-4 py-2 text-right">Kd Std.</th><th className="px-4 py-2 text-right">Satz</th><th className="px-4 py-2 text-right">Kosten</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {personnel.length === 0 ? <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400">Keine Zeitpaare</td></tr> : personnel.map(p => (
-                                    <tr key={p.pair_id} className="hover:bg-slate-50">
-                                        <td className="px-4 py-2 text-slate-600">{p.datum}</td><td className="px-4 py-2 font-medium">{p.mitarbeiter}</td><td className="px-4 py-2 text-slate-500">{p.role || '—'}</td>
-                                        <td className="px-4 py-2 text-right font-mono">{p.lis_stunden.toFixed(2)}</td><td className="px-4 py-2 text-right font-mono text-slate-500">{p.kunden_stunden.toFixed(2)}</td>
-                                        <td className="px-4 py-2 text-right">{eur(p.satz)}</td><td className="px-4 py-2 text-right font-semibold">{eur(p.kosten)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </CostSection>
-
-                    {/* Material Costs */}
-                    <CostSection title="Materialkosten" icon={<Package className="h-5 w-5" />} total={materialKosten} color="amber"
-                        actions={<div className="flex gap-2">
-                            <button onClick={() => { setAddMatForm({ material_id: '', quantity: 1 }); setAddMatModal(true); }} className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900"><Plus className="h-3.5 w-3.5" /> Material</button>
-                            <button onClick={saveMaterials} className="flex items-center gap-1 text-xs bg-amber-600 text-white px-2 py-1 rounded hover:bg-amber-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
-                        </div>}>
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
-                                <tr><th className="px-4 py-2 text-left">Material</th><th className="px-4 py-2 text-right w-24">Menge</th><th className="px-4 py-2 text-left">Einheit</th>
-                                    <th className="px-4 py-2 text-right">EK/Einheit</th><th className="px-4 py-2 text-right">VK/Einheit</th><th className="px-4 py-2 text-right">Kosten</th><th className="px-4 py-2 text-right">Erlöse</th><th className="w-10"></th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {materials.length === 0 ? <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">Keine Materialien</td></tr> : materials.map(m => (
-                                    <tr key={m.id} className="hover:bg-slate-50 group">
-                                        <td className="px-4 py-2 font-medium">{m.material_name}</td>
-                                        <td className="px-4 py-1.5"><input type="number" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={m.quantity} onChange={e => updateMaterialQty(m.id, +e.target.value)} /></td>
-                                        <td className="px-4 py-2 text-slate-500">{m.unit}</td>
-                                        <td className="px-4 py-2 text-right">{eur(m.cost_per_unit)}</td><td className="px-4 py-2 text-right">{eur(m.price_per_unit)}</td>
-                                        <td className="px-4 py-2 text-right font-semibold">{eur(m.total_cost)}</td><td className="px-4 py-2 text-right text-green-700">{eur(m.total_price)}</td>
-                                        <td className="px-2"><button onClick={() => deleteMaterial(m.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </CostSection>
-
-                    {/* Vehicle Costs */}
-                    <CostSection title="Fahrzeugkosten" icon={<Truck className="h-5 w-5" />} total={vehicleKosten} color="sky"
-                        actions={<div className="flex gap-2">
-                            <button onClick={() => { setAddVehForm({ vehicle_id: '', usage_type: 'km', usage_value: 0, cost_per_unit: 0, notes: '' }); setAddVehModal(true); }} className="flex items-center gap-1 text-xs text-sky-700 hover:text-sky-900"><Plus className="h-3.5 w-3.5" /> Fahrzeug</button>
-                            <button onClick={saveVehicleCosts} className="flex items-center gap-1 text-xs bg-sky-600 text-white px-2 py-1 rounded hover:bg-sky-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
-                        </div>}>
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
-                                <tr><th className="px-4 py-2 text-left">Fahrzeug</th><th className="px-4 py-2 w-20">Typ</th><th className="px-4 py-2 text-right w-24">Wert</th><th className="px-4 py-2 text-right w-28">Satz (€)</th><th className="px-4 py-2 text-right">Kosten</th><th className="w-10"></th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {vehicles.length === 0 ? <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Keine Fahrzeugkosten</td></tr> : vehicles.map(v => (
-                                    <tr key={v.id} className="hover:bg-slate-50 group">
-                                        <td className="px-4 py-2 font-medium">{v.fahrzeug}</td>
-                                        <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-1 py-1 text-sm" value={v.usage_type} onChange={e => updateVehicleCost(v.id, 'usage_type', e.target.value)}><option value="km">km</option><option value="Std">Std</option><option value="Tag">Tag</option><option value="Pauschal">Pauschal</option></select></td>
-                                        <td className="px-4 py-1.5"><input type="number" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={v.usage_value} onChange={e => updateVehicleCost(v.id, 'usage_value', +e.target.value)} /></td>
-                                        <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={v.cost_per_unit} onChange={e => updateVehicleCost(v.id, 'cost_per_unit', +e.target.value)} /></td>
-                                        <td className="px-4 py-2 text-right font-semibold">{eur(v.total_cost)}</td>
-                                        <td className="px-2"><button onClick={() => deleteVehicleCost(v.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </CostSection>
-
-                    {/* Service Costs */}
-                    <CostSection title="Dienstleistungskosten" icon={<Wrench className="h-5 w-5" />} total={serviceKosten} color="purple"
-                        actions={<button onClick={() => { setAddSvcForm({ service_id: '', quantity: 1, unit: 'Std', cost_per_unit: 0, supplier: '' }); setAddSvcModal(true); }} className="flex items-center gap-1 text-xs text-purple-700 hover:text-purple-900"><Plus className="h-3.5 w-3.5" /> Leistung</button>}>
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
-                                <tr><th className="px-4 py-2 text-left">Leistung</th><th className="px-4 py-2 text-left">Lieferant</th><th className="px-4 py-2 text-right">Menge</th><th className="px-4 py-2 text-right">EK/Einheit</th><th className="px-4 py-2 text-right">Kosten</th><th className="w-10"></th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {services.length === 0 ? <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Keine Dienstleistungen</td></tr> : services.map(s => (
-                                    <tr key={s.id} className="hover:bg-slate-50 group">
-                                        <td className="px-4 py-2 font-medium">{s.service_name}</td><td className="px-4 py-2 text-slate-500">{s.supplier || '—'}</td>
-                                        <td className="px-4 py-2 text-right font-mono">{s.quantity}</td><td className="px-4 py-2 text-right">{eur(s.cost_per_unit)}</td><td className="px-4 py-2 text-right font-semibold">{eur(s.total_cost)}</td>
-                                        <td className="px-2"><button onClick={() => deleteServiceCost(s.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </CostSection>
-
-                    {/* Extra Costs */}
-                    <CostSection title="Sonderkosten" icon={<AlertCircle className="h-5 w-5" />} total={extraKosten} color="amber"
-                        actions={<div className="flex gap-2">
-                            <button onClick={() => { setAddExtraForm({ cost_type: 'Sonstiges', description: '', cost: 0 }); setAddExtraModal(true); }} className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900"><Plus className="h-3.5 w-3.5" /> Kosten</button>
-                            <button onClick={saveExtraCosts} className="flex items-center gap-1 text-xs bg-amber-600 text-white px-2 py-1 rounded hover:bg-amber-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
-                        </div>}>
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
-                                <tr><th className="px-4 py-2 text-left">Typ</th><th className="px-4 py-2 text-left">Beschreibung</th><th className="px-4 py-2 text-right w-32">Betrag (€)</th><th className="w-10"></th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {extraCosts.length === 0 ? <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">Keine Sonderkosten</td></tr> : extraCosts.map(e => (
-                                    <tr key={e.cost_id} className="hover:bg-slate-50 group">
-                                        <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={e.cost_type} onChange={ev => updateExtraCost(e.cost_id, 'cost_type', ev.target.value)}>
-                                            <option value="Maut">Maut</option><option value="Parkgebühr">Parkgebühr</option><option value="Entsorgung">Entsorgung</option><option value="Verpackung">Verpackung</option><option value="Sonstiges">Sonstiges</option>
-                                        </select></td>
-                                        <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={e.description} onChange={ev => updateExtraCost(e.cost_id, 'description', ev.target.value)} placeholder="Beschreibung..." /></td>
-                                        <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={e.cost} onChange={ev => updateExtraCost(e.cost_id, 'cost', +ev.target.value)} /></td>
-                                        <td className="px-2"><button onClick={() => deleteExtraCost(e.cost_id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </CostSection>
-
-                    {/* Discounts */}
-                    <CostSection title="Rabatte / Nachlässe" icon={<Percent className="h-5 w-5" />} total={discountTotal} color="purple"
-                        actions={<div className="flex gap-2">
-                            <button onClick={addDiscountRow} className="flex items-center gap-1 text-xs text-purple-700 hover:text-purple-900"><Plus className="h-3.5 w-3.5" /> Rabatt</button>
-                            <button onClick={saveDiscounts} className="flex items-center gap-1 text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
-                        </div>}>
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
-                                <tr><th className="px-4 py-2 text-left">Bezeichnung</th><th className="px-4 py-2 w-24">Typ</th><th className="px-4 py-2 text-right w-32">Wert (€)</th><th className="w-10"></th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {discounts.length === 0 ? <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">Keine Rabatte</td></tr> : discounts.map(d => (
-                                    <tr key={d.discount_id} className="hover:bg-slate-50 group">
-                                        <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={d.label} onChange={e => updateDiscount(d.discount_id, 'label', e.target.value)} placeholder="Beschreibung..." /></td>
-                                        <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-1 py-1 text-sm" value={d.discount_type} onChange={e => updateDiscount(d.discount_id, 'discount_type', e.target.value)}><option value="flat">Pauschal</option><option value="percent">Prozent</option></select></td>
-                                        <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={d.value} onChange={e => updateDiscount(d.discount_id, 'value', +e.target.value)} /></td>
-                                        <td className="px-2"><button onClick={() => deleteDiscount(d.discount_id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </CostSection>
-
-                    {/* Revenue */}
-                    <CostSection title="Erlöse (Rechnungspositionen)" icon={<TrendingUp className="h-5 w-5" />} total={revenueTotal} color="green"
-                        actions={<div className="flex gap-2">
-                            <button onClick={addRevenueRow} className="flex items-center gap-1 text-xs text-green-700 hover:text-green-900"><Plus className="h-3.5 w-3.5" /> Zeile</button>
-                            <button onClick={saveRevenue} className="flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
-                        </div>}>
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
-                                <tr><th className="px-4 py-2 text-left">Position</th><th className="px-4 py-2 text-right w-20">Menge</th><th className="px-4 py-2 w-20">Einheit</th><th className="px-4 py-2 text-right w-28">Preis/Einheit</th><th className="px-4 py-2 text-right w-28">Gesamt</th><th className="w-10"></th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {revenue.length === 0 ? <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Keine Erlöse</td></tr> : revenue.map(r => (
-                                    <tr key={r.id} className="hover:bg-slate-50 group">
-                                        <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={r.position_label} onChange={e => updateRevenue(r.id, 'position_label', e.target.value)} placeholder="Position..." /></td>
-                                        <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={r.qty} onChange={e => updateRevenue(r.id, 'qty', +e.target.value)} /></td>
-                                        <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={r.unit} onChange={e => updateRevenue(r.id, 'unit', e.target.value)} /></td>
-                                        <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={r.unit_price} onChange={e => updateRevenue(r.id, 'unit_price', +e.target.value)} /></td>
-                                        <td className="px-4 py-2 text-right font-semibold text-green-700">{eur(r.line_total)}</td>
-                                        <td className="px-2"><button onClick={() => deleteRevenue(r.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </CostSection>
-                </div>
-            )}
-
-            {/* ======= ADD MATERIAL MODAL ======= */}
-            {addMatModal && <Modal title="Material hinzufügen" onClose={() => setAddMatModal(false)} onSave={addMaterial} disabled={!addMatForm.material_id}>
-                <div className="space-y-3">
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Material</label>
-                        <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addMatForm.material_id} onChange={e => setAddMatForm({ ...addMatForm, material_id: e.target.value })}>
-                            <option value="">Wählen...</option>
-                            {materialCatalog.map((m: any) => <option key={m.material_id} value={m.material_id}>{m.name} ({m.unit})</option>)}
-                        </select></div>
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Menge</label>
-                        <input type="number" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addMatForm.quantity} onChange={e => setAddMatForm({ ...addMatForm, quantity: +e.target.value })} /></div>
-                </div>
-            </Modal>}
-
-            {/* ======= ADD VEHICLE COST MODAL ======= */}
-            {addVehModal && <Modal title="Fahrzeugkosten hinzufügen" onClose={() => setAddVehModal(false)} onSave={addVehicleCost} disabled={!addVehForm.vehicle_id}>
-                <div className="space-y-3">
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Fahrzeug</label>
-                        <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.vehicle_id} onChange={e => setAddVehForm({ ...addVehForm, vehicle_id: e.target.value })}>
-                            <option value="">Wählen...</option>
-                            {vehicleCatalog.map((v: any) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.nickname || v.vehicle_id}</option>)}
-                        </select></div>
-                    <div className="grid grid-cols-3 gap-3">
-                        <div><label className="block text-xs font-medium text-slate-500 mb-1">Typ</label>
-                            <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.usage_type} onChange={e => setAddVehForm({ ...addVehForm, usage_type: e.target.value })}>
-                                <option value="km">km</option><option value="Std">Std</option><option value="Tag">Tag</option><option value="Pauschal">Pauschal</option>
-                            </select></div>
-                        <div><label className="block text-xs font-medium text-slate-500 mb-1">Wert</label>
-                            <input type="number" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.usage_value} onChange={e => setAddVehForm({ ...addVehForm, usage_value: +e.target.value })} /></div>
-                        <div><label className="block text-xs font-medium text-slate-500 mb-1">Satz (€)</label>
-                            <input type="number" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.cost_per_unit} onChange={e => setAddVehForm({ ...addVehForm, cost_per_unit: +e.target.value })} /></div>
-                    </div>
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Notizen</label>
-                        <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.notes} onChange={e => setAddVehForm({ ...addVehForm, notes: e.target.value })} /></div>
-                </div>
-            </Modal>}
-
-            {/* ======= ADD SERVICE MODAL ======= */}
-            {addSvcModal && <Modal title="Dienstleistung hinzufügen" onClose={() => setAddSvcModal(false)} onSave={addServiceCost} disabled={!addSvcForm.service_id}>
-                <div className="space-y-3">
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Leistung</label>
-                        <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addSvcForm.service_id} onChange={e => setAddSvcForm({ ...addSvcForm, service_id: e.target.value })}>
-                            <option value="">Wählen...</option>
-                            {serviceCatalog.map((s: any) => <option key={s.service_id} value={s.service_id}>{s.name}</option>)}
-                        </select></div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div><label className="block text-xs font-medium text-slate-500 mb-1">Menge</label>
-                            <input type="number" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addSvcForm.quantity} onChange={e => setAddSvcForm({ ...addSvcForm, quantity: +e.target.value })} /></div>
-                        <div><label className="block text-xs font-medium text-slate-500 mb-1">Lieferant</label>
-                            <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addSvcForm.supplier} onChange={e => setAddSvcForm({ ...addSvcForm, supplier: e.target.value })} /></div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Von</label>
+                            <input
+                                type="date"
+                                className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
+                                value={projectFilterStart}
+                                onChange={e => setProjectFilterStart(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Bis</label>
+                            <input
+                                type="date"
+                                className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none"
+                                value={projectFilterEnd}
+                                onChange={e => setProjectFilterEnd(e.target.value)}
+                            />
+                        </div>
                     </div>
                 </div>
-            </Modal>}
 
-            {/* ======= ADD EXTRA COST MODAL ======= */}
-            {addExtraModal && <Modal title="Sonderkosten hinzufügen" onClose={() => setAddExtraModal(false)} onSave={addExtraCost} disabled={!addExtraForm.description}>
-                <div className="space-y-3">
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Typ</label>
-                        <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.cost_type} onChange={e => setAddExtraForm({ ...addExtraForm, cost_type: e.target.value })}>
-                            <option value="Maut">Maut</option><option value="Parkgebühr">Parkgebühr</option><option value="Entsorgung">Entsorgung</option><option value="Verpackung">Verpackung</option><option value="Sonstiges">Sonstiges</option>
-                        </select></div>
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Beschreibung</label>
-                        <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.description} onChange={e => setAddExtraForm({ ...addExtraForm, description: e.target.value })} placeholder="z.B. Autobahnmaut A3" /></div>
-                    <div><label className="block text-xs font-medium text-slate-500 mb-1">Betrag (€)</label>
-                        <input type="number" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.cost} onChange={e => setAddExtraForm({ ...addExtraForm, cost: +e.target.value })} /></div>
+                <div className="flex-1 overflow-y-auto">
+                    {loading && projects.length === 0 ? (
+                        <div className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-400" /></div>
+                    ) : filteredProjects.length === 0 ? (
+                        <div className="p-8 text-center">
+                            <Package className="h-8 w-8 mx-auto text-slate-300 mb-2" />
+                            <p className="text-sm text-slate-500">Keine Projekte gefunden</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-slate-100">
+                            {filteredProjects.map(p => (
+                                <button
+                                    key={p.project_id}
+                                    onClick={() => setSelectedProjectId(p.project_id)}
+                                    className={cn(
+                                        "w-full text-left p-3 hover:bg-slate-50 transition-all border-l-[3px] group focus:outline-none",
+                                        selectedProjectId === p.project_id
+                                            ? "bg-blue-50/60 border-l-blue-600"
+                                            : "border-l-transparent"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "text-sm font-medium truncate mb-1",
+                                        selectedProjectId === p.project_id ? "text-blue-700" : "text-slate-700"
+                                    )}>
+                                        {p.name || 'Unbenanntes Projekt'}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            {p.project_code && (
+                                                <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                                    {p.project_code}
+                                                </span>
+                                            )}
+                                            {p.ort && (
+                                                <span className="text-xs text-slate-400 truncate flex-1 block" title={p.ort}>
+                                                    {p.ort}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {p.project_date && (
+                                            <span className="text-[10px] text-slate-400 whitespace-nowrap font-mono">
+                                                {format(new Date(p.project_date), 'dd.MM.yy')}
+                                            </span>
+                                        )}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
-            </Modal>}
+            </aside>
+
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col min-w-0 h-full relative">
+                {!sidebarOpen && (
+                    <button
+                        onClick={() => setSidebarOpen(true)}
+                        className="absolute left-4 top-4 z-20 p-2 bg-white border border-slate-200 shadow-md rounded-md hover:bg-slate-50 text-slate-600 transition-all"
+                    >
+                        <ChevronRight className="h-4 w-4" />
+                    </button>
+                )}
+
+                <header className="flex-none flex items-center justify-between border-b bg-white px-6 py-4 shadow-sm z-10">
+                    <div className={cn("flex items-center gap-3 transition-all", !sidebarOpen && "ml-12")}>
+                        <Calculator className="h-6 w-6 text-slate-700" />
+                        <div>
+                            <h1 className="text-xl font-bold text-slate-800 line-clamp-1">
+                                {selectedProject ? (selectedProject.name || 'Unbenannt') : 'Nachkalkulation'}
+                            </h1>
+                            {selectedProject && (
+                                <p className="text-xs text-slate-500 flex items-center gap-2">
+                                    {selectedProject.project_code && <span>{selectedProject.project_code}</span>}
+                                    {selectedProject.ort && <span>• {selectedProject.ort}</span>}
+                                    {selectedProject.project_date && <span>• {format(new Date(selectedProject.project_date), 'dd.MM.yyyy')}</span>}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <div>
+                        {selectedProject && (
+                            <button onClick={exportHTML} className="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 shadow-sm transition-colors">
+                                <FileText className="h-4 w-4" /> Export
+                            </button>
+                        )}
+                    </div>
+                </header>
+
+                <div className="flex-1 overflow-auto bg-slate-50/50">
+                    {loading && !selectedProject ? (
+                        <div className="flex h-full items-center justify-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+                        </div>
+                    ) : !selectedProject ? (
+                        <div className="flex h-full flex-col items-center justify-center text-slate-400 p-8">
+                            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                                <Calculator className="h-8 w-8 text-slate-300" />
+                            </div>
+                            <h3 className="text-lg font-medium text-slate-600">Kein Projekt ausgewählt</h3>
+                            <p className="text-sm max-w-xs text-center mt-2 text-slate-500">
+                                Wähle ein Projekt aus der Liste links, um die Nachkalkulation anzuzeigen.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="p-6 space-y-6 pb-20">
+                            {/* KPI Cards */}
+                            <div className="grid grid-cols-4 gap-4">
+                                <KpiCard label="Gesamtkosten" value={eur(totalCosts)} icon={<DollarSign className="h-5 w-5" />} color="text-slate-800" bgColor="bg-slate-100" />
+                                <KpiCard label="Gesamterlöse" value={eur(totalRevenue)} icon={<TrendingUp className="h-5 w-5" />} color="text-blue-700" bgColor="bg-blue-50" />
+                                <KpiCard label="Marge (€)" value={eur(margin)} icon={<TrendingUp className="h-5 w-5" />}
+                                    color={margin >= 0 ? 'text-green-700' : 'text-red-600'} bgColor={margin >= 0 ? 'bg-green-50' : 'bg-red-50'} />
+                                <KpiCard label="Marge (%)" value={`${marginPct.toFixed(1)}%`} icon={<TrendingUp className="h-5 w-5" />}
+                                    color={marginPct >= 0 ? 'text-green-700' : 'text-red-600'} bgColor={marginPct >= 0 ? 'bg-green-50' : 'bg-red-50'} />
+                            </div>
+
+                            {/* Personnel Costs */}
+                            <CostSection title="Personalkosten" icon={<Users className="h-5 w-5" />} total={personalKosten} color="blue">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                        <tr><th className="px-4 py-2 text-left">Datum</th><th className="px-4 py-2 text-left">Mitarbeiter</th><th className="px-4 py-2 text-left">Rolle</th>
+                                            <th className="px-4 py-2 text-right">LiS Std.</th><th className="px-4 py-2 text-right">Kd Std.</th><th className="px-4 py-2 text-right">Satz</th><th className="px-4 py-2 text-right">Kosten</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {personnel.length === 0 ? <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400">Keine Zeitpaare</td></tr> : personnel.map(p => (
+                                            <tr key={p.pair_id} className="hover:bg-slate-50">
+                                                <td className="px-4 py-2 text-slate-600">{p.datum}</td><td className="px-4 py-2 font-medium">{p.mitarbeiter}</td><td className="px-4 py-2 text-slate-500">{p.role || '—'}</td>
+                                                <td className="px-4 py-2 text-right font-mono">{p.lis_stunden.toFixed(2)}</td><td className="px-4 py-2 text-right font-mono text-slate-500">{p.kunden_stunden.toFixed(2)}</td>
+                                                <td className="px-4 py-2 text-right">{eur(p.satz)}</td><td className="px-4 py-2 text-right font-semibold">{eur(p.kosten)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CostSection>
+
+                            {/* Material Costs */}
+                            <CostSection title="Materialkosten" icon={<Package className="h-5 w-5" />} total={materialKosten} color="amber"
+                                actions={<div className="flex gap-2">
+                                    <button onClick={() => { setAddMatForm({ material_id: '', quantity: 1 }); setAddMatModal(true); }} className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900"><Plus className="h-3.5 w-3.5" /> Material</button>
+                                    <button onClick={saveMaterials} className="flex items-center gap-1 text-xs bg-amber-600 text-white px-2 py-1 rounded hover:bg-amber-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
+                                </div>}>
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                        <tr><th className="px-4 py-2 text-left">Material</th><th className="px-4 py-2 text-right w-24">Menge</th><th className="px-4 py-2 text-left">Einheit</th>
+                                            <th className="px-4 py-2 text-right">EK/Einheit</th><th className="px-4 py-2 text-right">VK/Einheit</th><th className="px-4 py-2 text-right">Kosten</th><th className="px-4 py-2 text-right">Erlöse</th><th className="w-10"></th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {materials.length === 0 ? <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">Keine Materialien</td></tr> : materials.map(m => (
+                                            <tr key={m.id} className="hover:bg-slate-50 group">
+                                                <td className="px-4 py-2 font-medium">{m.material_name}</td>
+                                                <td className="px-4 py-1.5"><input type="number" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={m.quantity} onChange={e => updateMaterialQty(m.id, +e.target.value)} /></td>
+                                                <td className="px-4 py-2 text-slate-500">{m.unit}</td>
+                                                <td className="px-4 py-2 text-right">{eur(m.cost_per_unit)}</td><td className="px-4 py-2 text-right">{eur(m.price_per_unit)}</td>
+                                                <td className="px-4 py-2 text-right font-semibold">{eur(m.total_cost)}</td><td className="px-4 py-2 text-right text-green-700">{eur(m.total_price)}</td>
+                                                <td className="px-2"><button onClick={() => deleteMaterial(m.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CostSection>
+
+                            {/* Vehicle Costs */}
+                            <CostSection title="Fahrzeugkosten" icon={<Truck className="h-5 w-5" />} total={vehicleKosten} color="sky"
+                                actions={<div className="flex gap-2">
+                                    <button onClick={() => { setAddVehForm({ vehicle_id: '', usage_type: 'km', usage_value: 0, cost_per_unit: 0, notes: '' }); setAddVehModal(true); }} className="flex items-center gap-1 text-xs text-sky-700 hover:text-sky-900"><Plus className="h-3.5 w-3.5" /> Fahrzeug</button>
+                                    <button onClick={saveVehicleCosts} className="flex items-center gap-1 text-xs bg-sky-600 text-white px-2 py-1 rounded hover:bg-sky-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
+                                </div>}>
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                        <tr><th className="px-4 py-2 text-left">Fahrzeug</th><th className="px-4 py-2 w-20">Typ</th><th className="px-4 py-2 text-right w-24">Wert</th><th className="px-4 py-2 text-right w-28">Satz (€)</th><th className="px-4 py-2 text-right">Kosten</th><th className="w-10"></th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {vehicles.length === 0 ? <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Keine Fahrzeugkosten</td></tr> : vehicles.map(v => (
+                                            <tr key={v.id} className="hover:bg-slate-50 group">
+                                                <td className="px-4 py-2 font-medium">{v.fahrzeug}</td>
+                                                <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-1 py-1 text-sm" value={v.usage_type} onChange={e => updateVehicleCost(v.id, 'usage_type', e.target.value)}><option value="km">km</option><option value="Std">Std</option><option value="Tag">Tag</option><option value="Pauschal">Pauschal</option></select></td>
+                                                <td className="px-4 py-1.5"><input type="number" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={v.usage_value} onChange={e => updateVehicleCost(v.id, 'usage_value', +e.target.value)} /></td>
+                                                <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={v.cost_per_unit} onChange={e => updateVehicleCost(v.id, 'cost_per_unit', +e.target.value)} /></td>
+                                                <td className="px-4 py-2 text-right font-semibold">{eur(v.total_cost)}</td>
+                                                <td className="px-2"><button onClick={() => deleteVehicleCost(v.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CostSection>
+
+                            {/* Service Costs */}
+                            <CostSection title="Dienstleistungskosten" icon={<Wrench className="h-5 w-5" />} total={serviceKosten} color="purple"
+                                actions={<button onClick={() => { setAddSvcForm({ service_id: '', quantity: 1, unit: 'Std', cost_per_unit: 0, supplier: '' }); setAddSvcModal(true); }} className="flex items-center gap-1 text-xs text-purple-700 hover:text-purple-900"><Plus className="h-3.5 w-3.5" /> Leistung</button>}>
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                        <tr><th className="px-4 py-2 text-left">Leistung</th><th className="px-4 py-2 text-left">Lieferant</th><th className="px-4 py-2 text-right">Menge</th><th className="px-4 py-2 text-right">EK/Einheit</th><th className="px-4 py-2 text-right">Kosten</th><th className="w-10"></th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {services.length === 0 ? <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Keine Dienstleistungen</td></tr> : services.map(s => (
+                                            <tr key={s.id} className="hover:bg-slate-50 group">
+                                                <td className="px-4 py-2 font-medium">{s.service_name}</td><td className="px-4 py-2 text-slate-500">{s.supplier || '—'}</td>
+                                                <td className="px-4 py-2 text-right font-mono">{s.quantity}</td><td className="px-4 py-2 text-right">{eur(s.cost_per_unit)}</td><td className="px-4 py-2 text-right font-semibold">{eur(s.total_cost)}</td>
+                                                <td className="px-2"><button onClick={() => deleteServiceCost(s.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CostSection>
+
+                            {/* Extra Costs */}
+                            <CostSection title="Sonderkosten" icon={<AlertCircle className="h-5 w-5" />} total={extraKosten} color="amber"
+                                actions={<div className="flex gap-2">
+                                    <button onClick={() => { setAddExtraForm({ cost_type: 'Sonstiges', description: '', cost: 0 }); setAddExtraModal(true); }} className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900"><Plus className="h-3.5 w-3.5" /> Kosten</button>
+                                    <button onClick={saveExtraCosts} className="flex items-center gap-1 text-xs bg-amber-600 text-white px-2 py-1 rounded hover:bg-amber-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
+                                </div>}>
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                        <tr><th className="px-4 py-2 text-left">Typ</th><th className="px-4 py-2 text-left">Beschreibung</th><th className="px-4 py-2 text-right w-32">Betrag (€)</th><th className="w-10"></th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {extraCosts.length === 0 ? <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">Keine Sonderkosten</td></tr> : extraCosts.map(e => (
+                                            <tr key={e.cost_id} className="hover:bg-slate-50 group">
+                                                <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={e.cost_type} onChange={ev => updateExtraCost(e.cost_id, 'cost_type', ev.target.value)}>
+                                                    <option value="Maut">Maut</option><option value="Parkgebühr">Parkgebühr</option><option value="Entsorgung">Entsorgung</option><option value="Verpackung">Verpackung</option><option value="Sonstiges">Sonstiges</option>
+                                                </select></td>
+                                                <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={e.description} onChange={ev => updateExtraCost(e.cost_id, 'description', ev.target.value)} placeholder="Beschreibung..." /></td>
+                                                <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={e.cost} onChange={ev => updateExtraCost(e.cost_id, 'cost', +ev.target.value)} /></td>
+                                                <td className="px-2"><button onClick={() => deleteExtraCost(e.cost_id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CostSection>
+
+                            {/* Discounts */}
+                            <CostSection title="Rabatte / Nachlässe" icon={<Percent className="h-5 w-5" />} total={discountTotal} color="purple"
+                                actions={<div className="flex gap-2">
+                                    <button onClick={addDiscountRow} className="flex items-center gap-1 text-xs text-purple-700 hover:text-purple-900"><Plus className="h-3.5 w-3.5" /> Rabatt</button>
+                                    <button onClick={saveDiscounts} className="flex items-center gap-1 text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
+                                </div>}>
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                        <tr><th className="px-4 py-2 text-left">Bezeichnung</th><th className="px-4 py-2 w-24">Typ</th><th className="px-4 py-2 text-right w-32">Wert (€)</th><th className="w-10"></th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {discounts.length === 0 ? <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400">Keine Rabatte</td></tr> : discounts.map(d => (
+                                            <tr key={d.discount_id} className="hover:bg-slate-50 group">
+                                                <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={d.label} onChange={e => updateDiscount(d.discount_id, 'label', e.target.value)} placeholder="Beschreibung..." /></td>
+                                                <td className="px-4 py-1.5"><select className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-1 py-1 text-sm" value={d.discount_type} onChange={e => updateDiscount(d.discount_id, 'discount_type', e.target.value)}><option value="flat">Pauschal</option><option value="percent">Prozent</option></select></td>
+                                                <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={d.value} onChange={e => updateDiscount(d.discount_id, 'value', +e.target.value)} /></td>
+                                                <td className="px-2"><button onClick={() => deleteDiscount(d.discount_id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CostSection>
+
+                            {/* Revenue */}
+                            <CostSection title="Erlöse (Rechnungspositionen)" icon={<TrendingUp className="h-5 w-5" />} total={revenueTotal} color="green"
+                                actions={<div className="flex gap-2">
+                                    <button onClick={addRevenueRow} className="flex items-center gap-1 text-xs text-green-700 hover:text-green-900"><Plus className="h-3.5 w-3.5" /> Zeile</button>
+                                    <button onClick={saveRevenue} className="flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"><Save className="h-3.5 w-3.5" /> Speichern</button>
+                                </div>}>
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 text-xs font-medium text-slate-500 uppercase">
+                                        <tr><th className="px-4 py-2 text-left">Position</th><th className="px-4 py-2 text-right w-20">Menge</th><th className="px-4 py-2 w-20">Einheit</th><th className="px-4 py-2 text-right w-28">Preis/Einheit</th><th className="px-4 py-2 text-right w-28">Gesamt</th><th className="w-10"></th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {revenue.length === 0 ? <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">Keine Erlöse</td></tr> : revenue.map(r => (
+                                            <tr key={r.id} className="hover:bg-slate-50 group">
+                                                <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={r.position_label} onChange={e => updateRevenue(r.id, 'position_label', e.target.value)} placeholder="Position..." /></td>
+                                                <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={r.qty} onChange={e => updateRevenue(r.id, 'qty', +e.target.value)} /></td>
+                                                <td className="px-4 py-1.5"><input className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm" value={r.unit} onChange={e => updateRevenue(r.id, 'unit', e.target.value)} /></td>
+                                                <td className="px-4 py-1.5"><input type="number" step="0.01" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm text-right" value={r.unit_price} onChange={e => updateRevenue(r.id, 'unit_price', +e.target.value)} /></td>
+                                                <td className="px-4 py-2 text-right font-semibold text-green-700">{eur(r.line_total)}</td>
+                                                <td className="px-2"><button onClick={() => deleteRevenue(r.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 className="h-4 w-4" /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </CostSection>
+                        </div>
+                    )}
+
+                    {/* ======= ADD MATERIAL MODAL ======= */}
+                    {addMatModal && <Modal title="Material hinzufügen" onClose={() => setAddMatModal(false)} onSave={addMaterial} disabled={!addMatForm.material_id}>
+                        <div className="space-y-3">
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Material</label>
+                                <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addMatForm.material_id} onChange={e => setAddMatForm({ ...addMatForm, material_id: e.target.value })}>
+                                    <option value="">Wählen...</option>
+                                    {materialCatalog.map((m: any) => <option key={m.material_id} value={m.material_id}>{m.name} ({m.unit})</option>)}
+                                </select></div>
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Menge</label>
+                                <input type="number" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addMatForm.quantity} onChange={e => setAddMatForm({ ...addMatForm, quantity: +e.target.value })} /></div>
+                        </div>
+                    </Modal>}
+
+                    {/* ======= ADD VEHICLE COST MODAL ======= */}
+                    {addVehModal && <Modal title="Fahrzeugkosten hinzufügen" onClose={() => setAddVehModal(false)} onSave={addVehicleCost} disabled={!addVehForm.vehicle_id}>
+                        <div className="space-y-3">
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Fahrzeug</label>
+                                <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.vehicle_id} onChange={e => setAddVehForm({ ...addVehForm, vehicle_id: e.target.value })}>
+                                    <option value="">Wählen...</option>
+                                    {vehicleCatalog.map((v: any) => <option key={v.vehicle_id} value={v.vehicle_id}>{v.nickname || v.vehicle_id}</option>)}
+                                </select></div>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div><label className="block text-xs font-medium text-slate-500 mb-1">Typ</label>
+                                    <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.usage_type} onChange={e => setAddVehForm({ ...addVehForm, usage_type: e.target.value })}>
+                                        <option value="km">km</option><option value="Std">Std</option><option value="Tag">Tag</option><option value="Pauschal">Pauschal</option>
+                                    </select></div>
+                                <div><label className="block text-xs font-medium text-slate-500 mb-1">Wert</label>
+                                    <input type="number" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.usage_value} onChange={e => setAddVehForm({ ...addVehForm, usage_value: +e.target.value })} /></div>
+                                <div><label className="block text-xs font-medium text-slate-500 mb-1">Satz (€)</label>
+                                    <input type="number" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.cost_per_unit} onChange={e => setAddVehForm({ ...addVehForm, cost_per_unit: +e.target.value })} /></div>
+                            </div>
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Notizen</label>
+                                <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addVehForm.notes} onChange={e => setAddVehForm({ ...addVehForm, notes: e.target.value })} /></div>
+                        </div>
+                    </Modal>}
+
+                    {/* ======= ADD SERVICE MODAL ======= */}
+                    {addSvcModal && <Modal title="Dienstleistung hinzufügen" onClose={() => setAddSvcModal(false)} onSave={addServiceCost} disabled={!addSvcForm.service_id}>
+                        <div className="space-y-3">
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Leistung</label>
+                                <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addSvcForm.service_id} onChange={e => setAddSvcForm({ ...addSvcForm, service_id: e.target.value })}>
+                                    <option value="">Wählen...</option>
+                                    {serviceCatalog.map((s: any) => <option key={s.service_id} value={s.service_id}>{s.name}</option>)}
+                                </select></div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="block text-xs font-medium text-slate-500 mb-1">Menge</label>
+                                    <input type="number" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addSvcForm.quantity} onChange={e => setAddSvcForm({ ...addSvcForm, quantity: +e.target.value })} /></div>
+                                <div><label className="block text-xs font-medium text-slate-500 mb-1">Lieferant</label>
+                                    <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addSvcForm.supplier} onChange={e => setAddSvcForm({ ...addSvcForm, supplier: e.target.value })} /></div>
+                            </div>
+                        </div>
+                    </Modal>}
+
+                    {/* ======= ADD EXTRA COST MODAL ======= */}
+                    {addExtraModal && <Modal title="Sonderkosten hinzufügen" onClose={() => setAddExtraModal(false)} onSave={addExtraCost} disabled={!addExtraForm.description}>
+                        <div className="space-y-3">
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Typ</label>
+                                <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.cost_type} onChange={e => setAddExtraForm({ ...addExtraForm, cost_type: e.target.value })}>
+                                    <option value="Maut">Maut</option><option value="Parkgebühr">Parkgebühr</option><option value="Entsorgung">Entsorgung</option><option value="Verpackung">Verpackung</option><option value="Sonstiges">Sonstiges</option>
+                                </select></div>
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Beschreibung</label>
+                                <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.description} onChange={e => setAddExtraForm({ ...addExtraForm, description: e.target.value })} placeholder="z.B. Autobahnmaut A3" /></div>
+                            <div><label className="block text-xs font-medium text-slate-500 mb-1">Betrag (€)</label>
+                                <input type="number" step="0.01" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={addExtraForm.cost} onChange={e => setAddExtraForm({ ...addExtraForm, cost: +e.target.value })} /></div>
+                        </div>
+                    </Modal>}
+                </div>
+            </div>
         </div>
     );
 }
