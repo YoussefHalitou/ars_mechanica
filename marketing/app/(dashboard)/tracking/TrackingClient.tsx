@@ -212,7 +212,6 @@ export default function TrackingPage() {
                     lis_bis: row.lis_bis ? `${row.lis_bis}:00` : null,
                     kunde_von: row.kunde_von ? `${row.kunde_von}:00` : null,
                     kunde_bis: row.kunde_bis ? `${row.kunde_bis}:00` : null,
-                    kunde_bis: row.kunde_bis ? `${row.kunde_bis}:00` : null,
                     pause_min: row.pause_min,
                     updated_at: new Date().toISOString(),
                 };

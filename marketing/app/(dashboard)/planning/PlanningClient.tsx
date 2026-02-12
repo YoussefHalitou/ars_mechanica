@@ -6,7 +6,7 @@ import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay }
 import { de } from 'date-fns/locale';
 import {
     ChevronLeft, ChevronRight, Calendar as CalendarIcon, Users, Truck, Plus,
-    X, Save, Loader2, Clock, FileText, User, MessageSquare, Pencil, Trash2, ArrowLeft
+    X, Save, Loader2, Clock, FileText, User, MessageSquare, Pencil, Trash2, ArrowLeft, MoreHorizontal
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +15,12 @@ import {
     DndContext, DragOverlay, useDraggable, useDroppable,
     DragEndEvent, DragStartEvent, closestCorners
 } from '@dnd-kit/core';
+import {
+    SortableContext,
+    verticalListSortingStrategy,
+    useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 type Project = Database['public']['Tables']['t_projects']['Row'];
 type Employee = Database['public']['Tables']['t_employees']['Row'];
@@ -52,8 +58,8 @@ function DraggableProject({ project }: { project: Project }) {
 }
 
 // ================ DROPPABLE DAY ================
-function DroppableDay({ day, plans, onDelete, onOpenStaff, onEditPlan }: {
-    day: Date; plans: MorningPlan[]; onDelete: (id: string, e: React.MouseEvent) => void; onOpenStaff: (plan: MorningPlan) => void; onEditPlan: (plan: MorningPlan) => void;
+function DroppableDay({ day, plans, onDelete, onEditPlan }: {
+    day: Date; plans: MorningPlan[]; onDelete: (id: string, e: React.MouseEvent) => void; onEditPlan: (plan: MorningPlan) => void;
 }) {
     const dateStr = format(day, 'yyyy-MM-dd');
     const { setNodeRef, isOver } = useDroppable({ id: `day-${dateStr}`, data: { date: dateStr } });
@@ -85,10 +91,7 @@ function DroppableDay({ day, plans, onDelete, onOpenStaff, onEditPlan }: {
                             {(plan.staff || []).map(s => (
                                 <span key={s.id} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full truncate max-w-[60px]">{s.employee?.name?.split(' ')[0] || '?'}</span>
                             ))}
-                            <button onClick={() => onOpenStaff(plan)}
-                                className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full hover:bg-blue-100 hover:text-blue-600 transition-colors flex items-center gap-0.5">
-                                <Users className="h-2.5 w-2.5" />
-                            </button>
+
                         </div>
                     </div>
                 ))}
@@ -97,6 +100,77 @@ function DroppableDay({ day, plans, onDelete, onOpenStaff, onEditPlan }: {
                 )}
             </div>
         </div>
+    );
+}
+
+// ================ SORTABLE STAFF ROW ================
+function SortableStaffRow({ staff, onUpdate, onRemove }: {
+    staff: StaffRow;
+    planStaff: StaffRow[];
+    onUpdate: (id: number, field: string, value: any) => void;
+    onRemove: (id: number) => void;
+}) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging
+    } = useSortable({ id: `staff-${staff.id}` });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+    };
+
+    return (
+        <tr ref={setNodeRef} style={style} className={cn("group hover:bg-slate-50/80 transition-colors", isDragging && "opacity-50 relative z-20 bg-white")}>
+            <td className="px-5 py-2 font-medium text-slate-700">
+                <div className="flex items-center gap-2">
+                    <div {...listeners} {...attributes} className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 p-1">
+                        <MoreHorizontal className="h-3.5 w-3.5 rotate-90" />
+                    </div>
+                    <div>
+                        {staff.employee?.name}
+                        <div className="text-[10px] text-slate-400 font-normal">{staff.employee?.contract_type}</div>
+                    </div>
+                </div>
+            </td>
+            <td className="px-2 py-2">
+                <input
+                    type="time"
+                    className="w-full bg-transparent border border-transparent rounded px-1 py-0.5 hover:border-slate-300 focus:border-blue-400 focus:bg-white transition-all text-slate-600 font-mono"
+                    defaultValue={staff.individual_start_time?.substring(0, 5) || ''}
+                    onBlur={(e) => {
+                        if (e.target.value !== staff.individual_start_time?.substring(0, 5)) {
+                            onUpdate(staff.id, 'individual_start_time', e.target.value);
+                        }
+                    }}
+                />
+            </td>
+            <td className="px-2 py-2">
+                <input
+                    type="text"
+                    className="w-full bg-transparent border border-transparent rounded px-1 py-0.5 hover:border-slate-300 focus:border-blue-400 focus:bg-white transition-all text-slate-600 placeholder:text-slate-300"
+                    placeholder="Rolle/Notiz..."
+                    defaultValue={staff.member_notes || ''}
+                    onBlur={(e) => {
+                        if (e.target.value !== (staff.member_notes || '')) {
+                            onUpdate(staff.id, 'member_notes', e.target.value);
+                        }
+                    }}
+                />
+            </td>
+            <td className="px-2 py-2 text-right">
+                <button
+                    onClick={() => onRemove(staff.id)}
+                    className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                >
+                    <X className="h-3.5 w-3.5" />
+                </button>
+            </td>
+        </tr>
     );
 }
 
@@ -124,14 +198,10 @@ export default function PlanningPage() {
     const [planForm, setPlanForm] = useState({ project_id: '', start_time: '07:00', vehicle_id: '', vehicle_names: '', service_type: '', notes: '' });
     const [savingPlan, setSavingPlan] = useState(false);
 
-    // Staff modal
-    const [staffModalPlan, setStaffModalPlan] = useState<MorningPlan | null>(null);
-    const [staffSelection, setStaffSelection] = useState<{ employee_id: string; start_time: string; notes: string }[]>([]);
-    const [savingStaff, setSavingStaff] = useState(false);
+    // Staff modal state REMOVED
 
-    // Note editing
-    const [editingNote, setEditingNote] = useState<{ employee_code: string; notizen: string; id?: number } | null>(null);
-    const [savingNote, setSavingNote] = useState(false);
+
+
 
     // Sidebar State
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -213,17 +283,67 @@ export default function PlanningPage() {
     }, [projects, projectSearch, projectFilterStart, projectFilterEnd]);
 
     // ---- DRAG HANDLERS ----
-    const handleDragStart = (e: DragStartEvent) => { if (e.active.data.current?.type === 'project') setActiveDragItem(e.active.data.current.project); };
+    const handleDragStart = (e: DragStartEvent) => {
+        if (e.active.data.current?.type === 'project') {
+            setActiveDragItem(e.active.data.current.project);
+        }
+    };
+
     const handleDragEnd = async (e: DragEndEvent) => {
         const { active, over } = e;
         setActiveDragItem(null);
+
         if (!over) return;
-        const projectId = active.id.toString().replace('project-', '');
-        const dateStr = over.id.toString().replace('day-', '');
-        const project = projects.find(p => p.project_id === projectId);
-        if (!project) return;
-        setPlanForm({ project_id: projectId, start_time: '07:00', vehicle_id: '', vehicle_names: '', service_type: project.dienstleistungen || '', notes: '' });
-        setPlanModal({ mode: 'create', date: dateStr });
+
+        // 1. PROJECT DRAG (to a Day)
+        if (active.data.current?.type === 'project') {
+            const projectId = active.id.toString().replace('project-', '');
+            const dateStr = over.id.toString().replace('day-', '');
+            const project = projects.find(p => p.project_id === projectId);
+            if (!project) return;
+            setPlanForm({ project_id: projectId, start_time: '07:00', vehicle_id: '', vehicle_names: '', service_type: project.dienstleistungen || '', notes: '' });
+            setPlanModal({ mode: 'create', date: dateStr });
+            return;
+        }
+
+        // 2. STAFF REORDERING (within a Plan)
+        if (active.id.toString().startsWith('staff-') && over.id.toString().startsWith('staff-')) {
+            const activeId = parseInt(active.id.toString().replace('staff-', ''));
+            const overId = parseInt(over.id.toString().replace('staff-', ''));
+
+            if (activeId === overId) return;
+
+            // Find which plan this staff belongs to
+            const plan = plans.find(p => p.staff?.some(s => s.id === activeId));
+            if (!plan || !plan.staff) return;
+
+            const oldIndex = plan.staff.findIndex(s => s.id === activeId);
+            const newIndex = plan.staff.findIndex(s => s.id === overId);
+
+            const newStaff = [...plan.staff];
+            const [movedItem] = newStaff.splice(oldIndex, 1);
+            newStaff.splice(newIndex, 0, movedItem);
+
+            // Update UI optimistically
+            setPlans(prev => prev.map(p => p.plan_id === plan.plan_id ? { ...p, staff: newStaff } : p));
+
+            // Persist to DB
+            try {
+                const updates = newStaff.map((s, idx) => ({
+                    id: s.id,
+                    sort_order: idx + 1
+                }));
+
+                // Promise.all to update all affected staff positions
+                await Promise.all(updates.map(u =>
+                    supabase.from('t_morningplan_staff').update({ sort_order: u.sort_order }).eq('id', u.id)
+                ));
+                toast('Reihenfolge gespeichert');
+            } catch {
+                toast('Fehler beim Sortieren', 'error');
+                fetchData(); // Rollback
+            }
+        }
     };
 
     // ---- PLAN CRUD ----
@@ -273,35 +393,41 @@ export default function PlanningPage() {
         if (error) toast('Fehler beim Löschen', 'error');
     };
 
-    // ---- STAFF MODAL ----
-    const openStaffModal = (plan: MorningPlan) => {
-        setStaffModalPlan(plan);
-        setStaffSelection(
-            (plan.staff || []).map(s => ({
-                employee_id: s.employee_id || '',
-                start_time: s.individual_start_time?.substring(0, 5) || plan.start_time?.substring(0, 5) || '07:00',
-                notes: s.member_notes || '',
-            }))
-        );
+    // ---- STAFF INLINE CRUD ----
+    const addStaffToPlan = async (planId: string, employeeId: string) => {
+        if (!employeeId) return;
+        try {
+            // Get max sort order
+            const currentStaff = plans.find(p => p.plan_id === planId)?.staff || [];
+            const maxOrder = currentStaff.reduce((max, s) => Math.max(max, s.sort_order || 0), 0);
+
+            const { error } = await supabase.from('t_morningplan_staff').insert({
+                plan_id: planId,
+                employee_id: employeeId,
+                sort_order: maxOrder + 1,
+                individual_start_time: null // defaults to plan start time usually, or null
+            });
+            if (error) throw error;
+            toast('Mitarbeiter hinzugefügt');
+            fetchData();
+        } catch { toast('Fehler beim Hinzufügen', 'error'); }
     };
 
-    const saveStaff = async () => {
-        if (!staffModalPlan) return;
-        setSavingStaff(true);
+    const updateStaffMember = async (staffId: number, field: string, value: any) => {
         try {
-            await supabase.from('t_morningplan_staff').delete().eq('plan_id', staffModalPlan.plan_id);
-            const inserts = staffSelection.filter(s => s.employee_id).map((s, i) => ({
-                plan_id: staffModalPlan.plan_id, employee_id: s.employee_id, individual_start_time: s.start_time || null, member_notes: s.notes || null, sort_order: i,
-            }));
-            if (inserts.length > 0) {
-                const { error } = await supabase.from('t_morningplan_staff').insert(inserts);
-                if (error) throw error;
-            }
-            toast('Team gespeichert');
-            setStaffModalPlan(null);
+            const { error } = await supabase.from('t_morningplan_staff').update({ [field]: value }).eq('id', staffId);
+            if (error) throw error;
+            fetchData(); // Refresh to ensure UI sync
+        } catch { toast('Fehler beim Aktualisieren', 'error'); }
+    };
+
+    const removeStaffFromPlan = async (staffId: number) => {
+        try {
+            const { error } = await supabase.from('t_morningplan_staff').delete().eq('id', staffId);
+            if (error) throw error;
+            toast('Mitarbeiter entfernt');
             fetchData();
-        } catch { toast('Fehler beim Speichern', 'error'); }
-        setSavingStaff(false);
+        } catch { toast('Fehler beim Entfernen', 'error'); }
     };
 
     // ---- VEHICLE STATUS ----
@@ -320,33 +446,7 @@ export default function PlanningPage() {
         } catch { toast('Fehler beim Speichern', 'error'); }
     };
 
-    // ---- EMPLOYEE NOTES CRUD ----
-    const openAddNote = () => setEditingNote({ employee_code: '', notizen: '' });
-    const openEditNote = (note: EmployeeDailyNote) => setEditingNote({ employee_code: note.employee_code, notizen: note.notizen || '', id: note.id });
-    const saveNote = async () => {
-        if (!editingNote) return;
-        setSavingNote(true);
-        try {
-            if (editingNote.id) {
-                const { error } = await supabase.from('t_employee_daily_notes').update({ notizen: editingNote.notizen }).eq('id', editingNote.id);
-                if (error) throw error;
-            } else {
-                const maxOrder = employeeNotes.reduce((max, n) => Math.max(max, n.sort_order || 0), 0);
-                const { error } = await supabase.from('t_employee_daily_notes').insert({ employee_code: editingNote.employee_code, plan_date: selectedDay, notizen: editingNote.notizen, sort_order: maxOrder + 1 });
-                if (error) throw error;
-            }
-            toast('Notiz gespeichert');
-            setEditingNote(null);
-            fetchDayPanels();
-        } catch { toast('Fehler', 'error'); }
-        setSavingNote(false);
-    };
-    const deleteNote = async (id: number) => {
-        if (!confirm('Notiz löschen?')) return;
-        setEmployeeNotes(prev => prev.filter(n => n.id !== id));
-        const { error } = await supabase.from('t_employee_daily_notes').delete().eq('id', id);
-        if (error) { toast('Fehler beim Löschen', 'error'); fetchDayPanels(); }
-    };
+
 
     // Day View: Plan for selected day
     const dayPlans = plans.filter(p => p.plan_date === selectedDay).sort((a, b) => (a.start_time || '07:00').localeCompare(b.start_time || '07:00'));
@@ -444,7 +544,7 @@ export default function PlanningPage() {
                                             <div key={dateStr} onClick={() => { setSelectedDay(dateStr); setViewMode('day'); }}
                                                 className={cn("cursor-pointer hover:ring-2 hover:ring-blue-200 rounded-xl transition-all", dateStr === selectedDay && "ring-2 ring-blue-400")}>
                                                 <DroppableDay day={day} plans={plans.filter(p => p.plan_date === dateStr)}
-                                                    onDelete={handleDeletePlan} onOpenStaff={openStaffModal} onEditPlan={openEditPlan} />
+                                                    onDelete={handleDeletePlan} onEditPlan={openEditPlan} />
                                             </div>
                                         );
                                     })}
@@ -458,7 +558,9 @@ export default function PlanningPage() {
                             <section>
                                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Fahrzeuge</h3>
                                 <div className="grid grid-cols-4 md:grid-cols-5 gap-3">
-                                    {vehicles.map(v => {
+                                    {["L4N", "L4U", "L Khalid", "L Caddy", "L Star"].map(vName => {
+                                        const v = vehicles.find(veh => (veh.nickname || veh.vehicle_id) === vName);
+                                        if (!v) return null;
                                         const vs = vehicleStatuses.find(s => s.vehicle_name === v.nickname && s.plan_date === selectedDay);
                                         return (
                                             <div key={v.vehicle_id} className="rounded-lg border border-slate-200 p-2.5 bg-white shadow-sm">
@@ -499,62 +601,108 @@ export default function PlanningPage() {
                                 <div className="flex items-center justify-between mb-3">
                                     <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Aufträge ({dayPlans.length})</h3>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-6">
                                     {dayPlans.map(plan => (
-                                        <div key={plan.plan_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                                            <div className="bg-slate-50 px-4 py-3 border-b flex items-start justify-between">
+                                        <div key={plan.plan_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col md:flex-row">
+                                            {/* LEFT: Project Info */}
+                                            <div className="md:w-1/3 bg-slate-50 px-5 py-4 border-b md:border-b-0 md:border-r flex flex-col justify-between">
                                                 <div>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-sm font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{plan.start_time?.substring(0, 5) || '07:00'}</span>
-                                                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{plan.service_type}</span>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="text-sm font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{plan.start_time?.substring(0, 5) || '07:00'}</span>
+                                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide border border-slate-200 px-2 py-0.5 rounded">{plan.service_type || 'Service'}</span>
                                                     </div>
-                                                    <h4 className="font-bold text-slate-800 text-lg leading-tight">{plan.project?.name || 'Unbekannt'}</h4>
+                                                    <h4 className="font-bold text-slate-800 text-xl leading-snug mb-1">{plan.project?.name || 'Unbekannt'}</h4>
+                                                    <div className="text-sm text-slate-600 flex items-start gap-1.5 mb-4">
+                                                        <span className="text-base mt-0.5">📍</span>
+                                                        <span className="leading-tight">
+                                                            {[plan.project?.strasse, plan.project?.nr].filter(Boolean).join(' ')}<br />
+                                                            {plan.project?.plz} {plan.project?.ort}
+                                                        </span>
+                                                    </div>
+
+                                                    {plan.vehicle_names && (
+                                                        <div className="mb-4">
+                                                            <div className="inline-block bg-orange-50 text-orange-800 border border-orange-100 rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-sm">
+                                                                🚛 {plan.vehicle_names}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {plan.notes && (
+                                                        <div className="bg-yellow-50 text-yellow-800 border border-yellow-200 p-2.5 text-xs italic rounded-lg relative">
+                                                            <span className="absolute top-1 right-2 text-yellow-400 font-serif text-xl">”</span>
+                                                            {plan.notes}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                <div className="flex items-center gap-1">
-                                                    <button onClick={() => openEditPlan(plan)} className="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
-                                                    <button onClick={(e) => handleDeletePlan(plan.plan_id, e)} className="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+
+                                                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-200/60">
+                                                    <button onClick={() => openEditPlan(plan)} className="flex-1 py-1.5 rounded-md bg-white border border-slate-300 text-xs font-medium text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors">Bearbeiten</button>
+                                                    <button onClick={(e) => handleDeletePlan(plan.plan_id, e)} className="p-1.5 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
                                                 </div>
                                             </div>
-                                            <div className="p-4 flex-1 space-y-4">
-                                                <div className="text-sm text-slate-600 flex items-start gap-2">
-                                                    <span className="text-lg">📍</span>
-                                                    <span className="mt-0.5">
-                                                        {[plan.project?.strasse, plan.project?.nr].filter(Boolean).join(' ')}, {plan.project?.plz} {plan.project?.ort}
-                                                    </span>
-                                                </div>
 
-                                                {plan.vehicle_names && (
-                                                    <div>
-                                                        <h5 className="text-xs font-semibold text-slate-400 uppercase mb-1">Fahrzeuge</h5>
-                                                        <div className="inline-block bg-orange-50 text-orange-800 border border-orange-100 rounded px-2 py-1 text-xs font-medium">
-                                                            🚛 {plan.vehicle_names}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div>
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <h5 className="text-xs font-semibold text-slate-400 uppercase">Team</h5>
-                                                        <button onClick={() => openStaffModal(plan)} className="text-[10px] text-blue-600 hover:underline flex items-center gap-1">
-                                                            <Pencil className="h-3 w-3" /> Bearbeiten
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {(plan.staff || []).length > 0 ? (plan.staff || []).map(s => (
-                                                            <div key={s.id} className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-full px-2 py-1">
-                                                                <span className="text-xs font-medium text-slate-700">{s.employee?.name}</span>
-                                                            </div>
-                                                        )) : (
-                                                            <span className="text-xs text-slate-400 italic">Kein Team zugewiesen.</span>
-                                                        )}
+                                            {/* RIGHT: Staff Table (Inline) */}
+                                            <div className="flex-1 p-0 flex flex-col">
+                                                <div className="px-5 py-3 bg-white border-b border-slate-100 flex items-center justify-between">
+                                                    <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                                                        <Users className="h-3.5 w-3.5" /> Einsatz-Team
+                                                    </h5>
+                                                    <div className="flex items-center gap-2">
+                                                        <select
+                                                            className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-slate-50 hover:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-all w-48"
+                                                            onChange={(e) => {
+                                                                if (e.target.value) {
+                                                                    addStaffToPlan(plan.plan_id, e.target.value);
+                                                                    e.target.value = ""; // Reset select
+                                                                }
+                                                            }}
+                                                        >
+                                                            <option value="">+ Mitarbeiter hinzufügen...</option>
+                                                            {employees.map(emp => (
+                                                                <option key={emp.employee_id} value={emp.employee_id}>
+                                                                    {emp.name} ({emp.contract_type || '?'})
+                                                                </option>
+                                                            ))}
+                                                        </select>
                                                     </div>
                                                 </div>
 
-                                                {plan.notes && (
-                                                    <div className="bg-yellow-50 text-yellow-800 border-l-2 border-yellow-300 p-2 text-xs italic rounded-r">
-                                                        {plan.notes}
-                                                    </div>
-                                                )}
+                                                <div className="flex-1 overflow-x-auto">
+                                                    <table className="w-full text-xs text-left">
+                                                        <thead className="text-slate-400 font-medium bg-slate-50/50 border-b border-slate-100">
+                                                            <tr>
+                                                                <th className="px-5 py-2 w-1/3">Name</th>
+                                                                <th className="px-2 py-2 w-20">Start</th>
+                                                                <th className="px-2 py-2">Info / Rolle</th>
+                                                                <th className="px-2 py-2 w-10"></th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-50">
+                                                            <SortableContext
+                                                                items={(plan.staff || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 1)).map(s => `staff-${s.id}`)}
+                                                                strategy={verticalListSortingStrategy}
+                                                            >
+                                                                {(plan.staff || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(staff => (
+                                                                    <SortableStaffRow
+                                                                        key={staff.id}
+                                                                        staff={staff}
+                                                                        planStaff={plan.staff || []}
+                                                                        onUpdate={updateStaffMember}
+                                                                        onRemove={removeStaffFromPlan}
+                                                                    />
+                                                                ))}
+                                                            </SortableContext>
+                                                            {(plan.staff || []).length === 0 && (
+                                                                <tr>
+                                                                    <td colSpan={4} className="px-5 py-8 text-center text-slate-300 italic">
+                                                                        Noch keine Mitarbeiter zugewiesen.
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -568,31 +716,92 @@ export default function PlanningPage() {
 
                             {/* 3. Employee Notes (Bottom) */}
                             <section className="pb-10">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Mitarbeiter-Infos</h3>
-                                    <button onClick={openAddNote} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
-                                        <Plus className="h-3.5 w-3.5" /> Notiz hinzufügen
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                                    {employeeNotes.map(n => (
-                                        <div key={n.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 bg-white shadow-sm group">
-                                            <div className="flex justify-between items-start">
-                                                <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                                                    <User className="h-4 w-4 text-slate-400" />
-                                                    {n.employee_code}
-                                                </div>
-                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={() => openEditNote(n)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-3.5 w-3.5" /></button>
-                                                    <button onClick={() => deleteNote(n.id)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
-                                                </div>
-                                            </div>
-                                            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2 rounded">{n.notizen || '—'}</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* INTERN */}
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Interne Mitarbeiter</h3>
+                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-slate-50 border-b text-xs font-medium text-slate-500 uppercase">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left">Name</th>
+                                                        <th className="px-4 py-2 text-left">Info</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {employees.filter(e => e.contract_type !== 'Freelance' && e.contract_type !== 'Extern').map(emp => {
+                                                        const note = employeeNotes.find(n => n.employee_code === (emp.employee_code || emp.name));
+                                                        return (
+                                                            <tr key={emp.employee_id} className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2 font-medium text-slate-700">{emp.name}</td>
+                                                                <td className="px-4 py-2">
+                                                                    <input className="w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 focus:outline-none py-1 text-slate-600"
+                                                                        placeholder="—"
+                                                                        defaultValue={note?.notizen || ''}
+                                                                        onBlur={async (e) => {
+                                                                            const val = e.target.value;
+                                                                            if (val === (note?.notizen || '')) return;
+
+                                                                            const code = emp.employee_code || emp.name;
+                                                                            if (note) {
+                                                                                await supabase.from('t_employee_daily_notes').update({ notizen: val }).eq('id', note.id);
+                                                                            } else if (val) {
+                                                                                await supabase.from('t_employee_daily_notes').insert({ employee_code: code, employee_id: emp.employee_id, plan_date: selectedDay, notizen: val, sort_order: 0 });
+                                                                            }
+                                                                            fetchDayPanels();
+                                                                        }}
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
                                         </div>
-                                    ))}
-                                    {employeeNotes.length === 0 && (
-                                        <div className="col-span-full py-6 text-center text-xs text-slate-400 italic">Keine Notizen.</div>
-                                    )}
+                                    </div>
+
+                                    {/* EXTERN */}
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Externe Mitarbeiter</h3>
+                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-slate-50 border-b text-xs font-medium text-slate-500 uppercase">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left">Name</th>
+                                                        <th className="px-4 py-2 text-left">Info</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {employees.filter(e => e.contract_type === 'Freelance' || e.contract_type === 'Extern').map(emp => {
+                                                        const note = employeeNotes.find(n => n.employee_code === (emp.employee_code || emp.name));
+                                                        return (
+                                                            <tr key={emp.employee_id} className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2 font-medium text-slate-700">{emp.name}</td>
+                                                                <td className="px-4 py-2">
+                                                                    <input className="w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 focus:outline-none py-1 text-slate-600"
+                                                                        placeholder="—"
+                                                                        defaultValue={note?.notizen || ''}
+                                                                        onBlur={async (e) => {
+                                                                            const val = e.target.value;
+                                                                            if (val === (note?.notizen || '')) return;
+
+                                                                            const code = emp.employee_code || emp.name;
+                                                                            if (note) {
+                                                                                await supabase.from('t_employee_daily_notes').update({ notizen: val }).eq('id', note.id);
+                                                                            } else if (val) {
+                                                                                await supabase.from('t_employee_daily_notes').insert({ employee_code: code, employee_id: emp.employee_id, plan_date: selectedDay, notizen: val, sort_order: 0 });
+                                                                            }
+                                                                            fetchDayPanels();
+                                                                        }}
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
                                 </div>
                             </section>
                         </div>
@@ -684,81 +893,9 @@ export default function PlanningPage() {
                 </div>
             )}
 
-            {/* ======= STAFF ASSIGNMENT MODAL ======= */}
-            {staffModalPlan && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setStaffModalPlan(null)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg m-4" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between border-b px-6 py-4">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-800">Team zuweisen</h2>
-                                <p className="text-sm text-slate-500">{staffModalPlan.project?.name}</p>
-                            </div>
-                            <button onClick={() => setStaffModalPlan(null)} className="p-1 rounded-lg hover:bg-slate-100"><X className="h-5 w-5 text-slate-400" /></button>
-                        </div>
-                        <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
-                            {staffSelection.map((s, i) => (
-                                <div key={i} className="flex items-center gap-2">
-                                    <select className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" value={s.employee_id}
-                                        onChange={e => { const copy = [...staffSelection]; copy[i].employee_id = e.target.value; setStaffSelection(copy); }}>
-                                        <option value="">Mitarbeiter wählen...</option>
-                                        {employees.map(emp => <option key={emp.employee_id} value={emp.employee_id}>{emp.name} ({emp.contract_type || ''})</option>)}
-                                    </select>
-                                    <input type="time" className="rounded-lg border border-slate-300 px-2 py-2 text-sm w-24" value={s.start_time}
-                                        onChange={e => { const copy = [...staffSelection]; copy[i].start_time = e.target.value; setStaffSelection(copy); }} />
-                                    <input className="rounded-lg border border-slate-300 px-2 py-2 text-sm w-28" placeholder="Notiz" value={s.notes}
-                                        onChange={e => { const copy = [...staffSelection]; copy[i].notes = e.target.value; setStaffSelection(copy); }} />
-                                    <button onClick={() => setStaffSelection(prev => prev.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-500"><X className="h-4 w-4" /></button>
-                                </div>
-                            ))}
-                            <button onClick={() => setStaffSelection(prev => [...prev, { employee_id: '', start_time: staffModalPlan?.start_time?.substring(0, 5) || '07:00', notes: '' }])}
-                                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"><Plus className="h-4 w-4" /> Mitarbeiter hinzufügen</button>
-                        </div>
-                        <div className="flex justify-end gap-3 border-t px-6 py-4">
-                            <button onClick={() => setStaffModalPlan(null)} className="px-4 py-2 text-sm font-medium text-slate-600 rounded-lg border border-slate-300 hover:bg-slate-50">Abbrechen</button>
-                            <button onClick={saveStaff} disabled={savingStaff}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm">
-                                {savingStaff ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
-            {/* ======= EMPLOYEE NOTE MODAL ======= */}
-            {editingNote && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingNote(null)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm m-4" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between border-b px-6 py-4">
-                            <h2 className="text-lg font-bold text-slate-800">{editingNote.id ? 'Notiz bearbeiten' : 'Neue Notiz'}</h2>
-                            <button onClick={() => setEditingNote(null)} className="p-1 rounded-lg hover:bg-slate-100"><X className="h-5 w-5 text-slate-400" /></button>
-                        </div>
-                        <div className="p-6 space-y-3">
-                            {!editingNote.id && (
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-500 mb-1">Mitarbeiter</label>
-                                    <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={editingNote.employee_code}
-                                        onChange={e => setEditingNote({ ...editingNote, employee_code: e.target.value })}>
-                                        <option value="">Mitarbeiter wählen...</option>
-                                        {employees.map(emp => <option key={emp.employee_id} value={emp.employee_code || emp.name}>{emp.name} ({emp.employee_code})</option>)}
-                                    </select>
-                                </div>
-                            )}
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-1">Notiz</label>
-                                <textarea className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-none" rows={3}
-                                    value={editingNote.notizen} onChange={e => setEditingNote({ ...editingNote, notizen: e.target.value })} />
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-3 border-t px-6 py-4">
-                            <button onClick={() => setEditingNote(null)} className="px-4 py-2 text-sm font-medium text-slate-600 rounded-lg border border-slate-300 hover:bg-slate-50">Abbrechen</button>
-                            <button onClick={saveNote} disabled={savingNote || (!editingNote.id && !editingNote.employee_code)}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm">
-                                {savingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+
+
         </DndContext>
     );
 }

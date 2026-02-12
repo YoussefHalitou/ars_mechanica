@@ -25,11 +25,11 @@ const COMPANY = {
 };
 
 const MENU_ITEMS = [
-    { href: '/apps/planning', label: 'Einsatzplanung', icon: Calendar },
-    { href: '/apps/tracking', label: 'Rückerfassung', icon: Clock },
-    { href: '/apps/calculation', label: 'Nachkalkulation', icon: Calculator },
-    { href: '/apps/projects', label: 'Projekte', icon: FolderKanban },
-    { href: '/apps/resources', label: 'Ressourcen', icon: Users },
+    { href: '/planning', label: 'Einsatzplanung', icon: Calendar },
+    { href: '/tracking', label: 'Rückerfassung', icon: Clock },
+    { href: '/calculation', label: 'Nachkalkulation', icon: Calculator },
+    { href: '/projects', label: 'Projekte', icon: FolderKanban },
+    { href: '/resources', label: 'Ressourcen', icon: Users },
 ];
 
 export function AppSidebar() {
