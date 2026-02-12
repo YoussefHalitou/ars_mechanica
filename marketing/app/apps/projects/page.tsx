@@ -40,8 +40,9 @@ const SERVICE_COLORS: Record<string, string> = {
 
 const empty: ProjectInsert = {
     anrede: '', name: '', strasse: '', nr: '', plz: '', ort: '',
-    telefon: '', email: '', notes: '', status: 'In Planung',
-    dienstleistungen: '', offer_type: '', project_date: '', project_time: '',
+    telefon: '', email: '', notes: '',
+    dienstleistungen: '', offer_type: '', project_date: null, project_time: '',
+    project_start_date: null, project_end_date: null,
 };
 
 export default function ProjectsPage() {
@@ -50,7 +51,8 @@ export default function ProjectsPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [filterService, setFilterService] = useState('');
-    const [filterStatus, setFilterStatus] = useState('');
+    const [dateRangeStart, setDateRangeStart] = useState('');
+    const [dateRangeEnd, setDateRangeEnd] = useState('');
     const [modalOpen, setModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<ProjectInsert>(empty);
     const [isEditing, setIsEditing] = useState(false);
@@ -72,16 +74,17 @@ export default function ProjectsPage() {
         setLoading(true);
         let query = supabase.from('t_projects').select('*').order('created_at', { ascending: false }).limit(200);
 
-        if (filterStatus) query = query.eq('status', filterStatus);
         if (filterService) query = query.ilike('dienstleistungen', `%${filterService}%`);
+        if (dateRangeStart) query = query.gte('project_date', dateRangeStart);
+        if (dateRangeEnd) query = query.lte('project_date', dateRangeEnd);
         if (debouncedSearch) {
-            query = query.or(`name.ilike.%${debouncedSearch}%,ort.ilike.%${debouncedSearch}%,project_code.ilike.%${debouncedSearch}%,plz.ilike.%${debouncedSearch}%,strasse.ilike.%${debouncedSearch}%`);
+            query = query.or(`name.ilike.%${debouncedSearch}%,ort.ilike.%${debouncedSearch}%,plz.ilike.%${debouncedSearch}%,strasse.ilike.%${debouncedSearch}%`);
         }
 
         const { data } = await query;
         setProjects(data || []);
         setLoading(false);
-    }, [debouncedSearch, filterService, filterStatus]);
+    }, [debouncedSearch, filterService, dateRangeStart, dateRangeEnd]);
 
     useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
@@ -115,7 +118,6 @@ export default function ProjectsPage() {
     const openEdit = (p: Project) => {
         setEditingProject({
             project_id: p.project_id,
-            project_code: p.project_code,
             anrede: p.anrede || '',
             name: p.name || '',
             strasse: p.strasse || '',
@@ -125,13 +127,12 @@ export default function ProjectsPage() {
             telefon: p.telefon || '',
             email: p.email || '',
             notes: p.notes || '',
-            status: p.status || 'In Planung',
             dienstleistungen: p.dienstleistungen || '',
             offer_type: p.offer_type || '',
-            project_date: p.project_date || '',
+            project_date: p.project_date || null,
             project_time: p.project_time || '',
-            project_start_date: p.project_start_date || '',
-            project_end_date: p.project_end_date || '',
+            project_start_date: p.project_start_date || null,
+            project_end_date: p.project_end_date || null,
         });
         setIsEditing(true);
         setModalOpen(true);
@@ -140,13 +141,22 @@ export default function ProjectsPage() {
     const handleSave = async () => {
         setSaving(true);
         try {
+            // Clean empty date strings to null
+            const cleanData = {
+                ...editingProject,
+                project_date: editingProject.project_date || null,
+                project_time: editingProject.project_time || null,
+                project_start_date: editingProject.project_start_date || null,
+                project_end_date: editingProject.project_end_date || null,
+            };
+
             if (isEditing && editingProject.project_id) {
-                const { project_id, project_code, ...updateData } = editingProject;
+                const { project_id, project_code, ...updateData } = cleanData;
                 const { error } = await supabase.from('t_projects').update(updateData).eq('project_id', project_id);
                 if (error) throw error;
                 toast('Projekt aktualisiert');
             } else {
-                const { project_id, project_code, ...insertData } = editingProject;
+                const { project_id, project_code, ...insertData } = cleanData;
                 const { error } = await supabase.from('t_projects').insert(insertData);
                 if (error) throw error;
                 toast('Projekt erstellt');
@@ -169,14 +179,29 @@ export default function ProjectsPage() {
         if (error) { toast('Fehler beim Löschen', 'error'); fetchProjects(); }
     };
 
-    // Inline status change from the table
-    const handleStatusChange = async (projectId: string, newStatus: string) => {
-        setProjects(prev => prev.map(p => p.project_id === projectId ? { ...p, status: newStatus } : p));
-        if (selectedProject?.project_id === projectId) {
-            setSelectedProject(prev => prev ? { ...prev, status: newStatus } : null);
-        }
-        const { error } = await supabase.from('t_projects').update({ status: newStatus }).eq('project_id', projectId);
-        if (error) { toast('Status-Änderung fehlgeschlagen', 'error'); fetchProjects(); }
+    // Quick date range presets
+    const setThisWeek = () => {
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        setDateRangeStart(format(monday, 'yyyy-MM-dd'));
+        setDateRangeEnd(format(sunday, 'yyyy-MM-dd'));
+    };
+
+    const setThisMonth = () => {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        setDateRangeStart(format(firstDay, 'yyyy-MM-dd'));
+        setDateRangeEnd(format(lastDay, 'yyyy-MM-dd'));
+    };
+
+    const clearDateRange = () => {
+        setDateRangeStart('');
+        setDateRangeEnd('');
     };
 
     // Save notes from detail panel
@@ -220,7 +245,7 @@ export default function ProjectsPage() {
                 <div className="flex items-center gap-3 border-b bg-white px-6 py-3">
                     <div className="relative flex-1 max-w-md">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <input type="text" placeholder="Suche nach Name, Ort, PLZ, Straße oder Projektnr..."
+                        <input type="text" placeholder="Suche nach Name, Ort, PLZ, Straße..."
                             className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                             value={search} onChange={(e) => setSearch(e.target.value)} />
                     </div>
@@ -229,11 +254,24 @@ export default function ProjectsPage() {
                         <option value="">Alle Dienstleistungen</option>
                         {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                        value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                        <option value="">Alle Status</option>
-                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <div className="flex items-center gap-2 border-l pl-3">
+                        <button onClick={setThisWeek} className="px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 transition-colors">
+                            Diese Woche
+                        </button>
+                        <button onClick={setThisMonth} className="px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 transition-colors">
+                            Dieser Monat
+                        </button>
+                        <input type="date" value={dateRangeStart} onChange={(e) => setDateRangeStart(e.target.value)}
+                            className="px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:border-blue-500 focus:outline-none" />
+                        <span className="text-slate-400">bis</span>
+                        <input type="date" value={dateRangeEnd} onChange={(e) => setDateRangeEnd(e.target.value)}
+                            className="px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:border-blue-500 focus:outline-none" />
+                        {(dateRangeStart || dateRangeEnd) && (
+                            <button onClick={clearDateRange} className="px-2 py-2 text-xs text-slate-500 hover:text-slate-700">
+                                <X className="h-4 w-4" />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Table */}
@@ -242,23 +280,21 @@ export default function ProjectsPage() {
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wider">
                                 <tr>
-                                    <th className="px-4 py-3">Projektnr.</th>
                                     <th className="px-4 py-3">Kunde</th>
                                     <th className="px-4 py-3">Adresse</th>
                                     <th className="px-4 py-3">Kontakt</th>
                                     <th className="px-4 py-3">Dienstleistung</th>
-                                    <th className="px-4 py-3">Status</th>
                                     <th className="px-4 py-3">Datum</th>
                                     <th className="w-20"></th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {loading ? (
-                                    <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                                    <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                                         <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /> Projekte laden...
                                     </td></tr>
                                 ) : projects.length === 0 ? (
-                                    <tr><td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                                    <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                                         Keine Projekte gefunden.
                                     </td></tr>
                                 ) : projects.map(p => (
@@ -268,9 +304,6 @@ export default function ProjectsPage() {
                                             selectedProject?.project_id === p.project_id && "bg-blue-50 hover:bg-blue-50"
                                         )}
                                         onClick={() => loadProjectDetail(p)}>
-                                        <td className="px-4 py-3">
-                                            <span className="font-mono text-xs text-slate-500">{p.project_code || '—'}</span>
-                                        </td>
                                         <td className="px-4 py-3">
                                             <div className="font-medium text-slate-900">
                                                 {p.anrede ? `${p.anrede} ` : ''}{p.name || 'Unbenannt'}
@@ -294,17 +327,6 @@ export default function ProjectsPage() {
                                                     {p.dienstleistungen}
                                                 </span>
                                             )}
-                                        </td>
-                                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                                            <select
-                                                className={cn(
-                                                    'text-xs font-medium px-2 py-1 rounded-full border cursor-pointer appearance-none text-center',
-                                                    STATUS_COLORS[p.status || ''] || 'bg-slate-100 text-slate-600 border-slate-200'
-                                                )}
-                                                value={p.status || 'In Planung'}
-                                                onChange={e => handleStatusChange(p.project_id, e.target.value)}>
-                                                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
                                         </td>
                                         <td className="px-4 py-3 text-slate-600 text-xs">
                                             {p.project_date ? format(new Date(p.project_date), 'dd.MM.yyyy') : '—'}
@@ -339,15 +361,6 @@ export default function ProjectsPage() {
                                 <span className="text-xs text-slate-500 font-mono">{selectedProject.project_code || '—'}</span>
                             </div>
                         </div>
-                        <select
-                            className={cn(
-                                'text-xs font-medium px-2.5 py-1 rounded-full border cursor-pointer',
-                                STATUS_COLORS[selectedProject.status || ''] || 'bg-slate-100 text-slate-600 border-slate-200'
-                            )}
-                            value={selectedProject.status || 'In Planung'}
-                            onChange={e => handleStatusChange(selectedProject.project_id, e.target.value)}>
-                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
                     </div>
 
                     {/* Detail Tabs */}
@@ -601,13 +614,6 @@ export default function ProjectsPage() {
                                             value={editingProject.dienstleistungen || ''} onChange={e => setField('dienstleistungen', e.target.value)}>
                                             <option value="">—</option>
                                             {SERVICE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-500 mb-1">Status</label>
-                                        <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-                                            value={editingProject.status || 'In Planung'} onChange={e => setField('status', e.target.value)}>
-                                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                                         </select>
                                     </div>
                                     <div>
