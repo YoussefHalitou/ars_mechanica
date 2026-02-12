@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 
+import { SearchableSelect } from '@/components/ui/searchable-select';
+
 type Project = { project_id: string; name: string; project_code: string | null };
 type Employee = { employee_id: string; name: string; employee_code: string | null };
 type MorningPlan = { plan_id: string; project_id: string | null; project?: Project };
@@ -31,6 +33,7 @@ interface TrackingRow {
     kunde_bis: string;
     pause_min: number;
     notes: string;
+    datum?: string; // Added for project view
     isNew: boolean;
 }
 
@@ -41,8 +44,13 @@ export default function TrackingPage() {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [rows, setRows] = useState<TrackingRow[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+
+    // Project View Mode
+    const [viewMode, setViewMode] = useState<'day' | 'project'>('day');
+    const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
     // Work assignments
     const [workAssignments, setWorkAssignments] = useState<WorkAssignment[]>([]);
@@ -58,8 +66,52 @@ export default function TrackingPage() {
         setEmployees(data || []);
     }, []);
 
+    const fetchProjects = useCallback(async () => {
+        const { data } = await supabase.from('t_projects').select('project_id, name, project_code').order('created_at', { ascending: false });
+        setProjects(data || []);
+    }, []);
+
     const fetchData = useCallback(async () => {
         setLoading(true);
+
+        if (viewMode === 'project' && selectedProjectId) {
+            // Project View Fetch
+            const { data: timePairs } = await supabase
+                .from('t_time_pairs')
+                .select('*')
+                .eq('project_id', selectedProjectId)
+                .order('datum', { ascending: false });
+
+            // We also need project details to fill names (though we selected it, good to have)
+            // And maybe plans if we want to link them, but simpler to just show what we have.
+            // For now, let's just use the selected project name for all rows or look it up.
+            const currentProject = projects.find(p => p.project_id === selectedProjectId);
+
+            const trackingRows: TrackingRow[] = (timePairs || []).map(tp => ({
+                _tempId: tp.pair_id,
+                pair_id: tp.pair_id,
+                project_id: tp.project_id,
+                project_name: currentProject?.name || '',
+                project_code: currentProject?.project_code || '',
+                plan_id: tp.plan_id,
+                mitarbeiter: tp.mitarbeiter,
+                employee_id: null,
+                lis_von: tp.lis_von?.substring(0, 5) || '',
+                lis_bis: tp.lis_bis?.substring(0, 5) || '',
+                kunde_von: tp.kunde_von?.substring(0, 5) || '',
+                kunde_bis: tp.kunde_bis?.substring(0, 5) || '',
+                pause_min: tp.pause_min || 0,
+                notes: tp.notes || '', // added notes mapping
+                datum: tp.datum, // Important for project view
+                isNew: false,
+            }));
+
+            setRows(trackingRows);
+            setLoading(false);
+            return;
+        }
+
+        // Daily View Fetch (Existing Logic)
         const dateStr = format(currentDate, 'yyyy-MM-dd');
 
         const [tpRes, planRes, waRes] = await Promise.all([
@@ -92,28 +144,20 @@ export default function TrackingPage() {
             };
         });
 
-        setRows(trackingRows);
-        setWorkAssignments(waRes.data || []);
-        setLoading(false);
-    }, [currentDate]);
-
-    useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
-    useEffect(() => { fetchData(); }, [fetchData]);
-
-    const handleCopyFromPlan = async () => {
-        const dateStr = format(currentDate, 'yyyy-MM-dd');
+        // -- AUTO MERGE PLAN --
         const { data: planStaff } = await supabase
             .from('t_morningplan_staff')
-            .select('*, plan:t_morningplan(*, project:t_projects(project_id, name, project_code)), employee:t_employees(employee_id, name)')
+            .select('*, plan:t_morningplan!inner(*, project:t_projects(project_id, name, project_code)), employee:t_employees(employee_id, name)')
             .eq('plan.plan_date', dateStr);
 
+        const existingKeys = new Set(trackingRows.map(r => `${r.project_id}-${r.mitarbeiter}`));
+        const newPlanRows: TrackingRow[] = [];
         const staff = (planStaff as any[] || []).filter((s: any) => s.plan?.plan_date === dateStr);
-        const existing = new Set(rows.map(r => `${r.project_id}-${r.mitarbeiter}`));
-        const newRows: TrackingRow[] = [];
+
         staff.forEach((s: any) => {
             const key = `${s.plan?.project_id}-${s.employee?.name}`;
-            if (!existing.has(key) && s.employee?.name) {
-                newRows.push({
+            if (!existingKeys.has(key) && s.employee?.name) {
+                newPlanRows.push({
                     _tempId: `new-${Math.random()}`,
                     pair_id: null,
                     project_id: s.plan?.project_id,
@@ -123,17 +167,22 @@ export default function TrackingPage() {
                     mitarbeiter: s.employee.name,
                     employee_id: s.employee.employee_id,
                     lis_von: s.individual_start_time?.substring(0, 5) || s.plan?.start_time?.substring(0, 5) || '07:00',
-                    lis_bis: '',
-                    kunde_von: '',
-                    kunde_bis: '',
-                    pause_min: 0,
-                    notes: '',
+                    lis_bis: '', kunde_von: '', kunde_bis: '', pause_min: 0, notes: '',
                     isNew: true,
                 });
             }
         });
-        if (newRows.length > 0) setRows(prev => [...prev, ...newRows]);
-    };
+
+        setRows([...trackingRows, ...newPlanRows]);
+        setWorkAssignments(waRes.data || []);
+        setLoading(false);
+    }, [currentDate, viewMode, selectedProjectId, projects]); // Added dependencies
+
+    useEffect(() => { fetchEmployees(); fetchProjects(); }, [fetchEmployees, fetchProjects]);
+    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+
 
     const calculateHours = (von: string, bis: string, pauseMin: number = 0): string => {
         if (!von || !bis) return '—';
@@ -162,6 +211,7 @@ export default function TrackingPage() {
                     lis_von: row.lis_von ? `${row.lis_von}:00` : null,
                     lis_bis: row.lis_bis ? `${row.lis_bis}:00` : null,
                     kunde_von: row.kunde_von ? `${row.kunde_von}:00` : null,
+                    kunde_bis: row.kunde_bis ? `${row.kunde_bis}:00` : null,
                     kunde_bis: row.kunde_bis ? `${row.kunde_bis}:00` : null,
                     pause_min: row.pause_min,
                     updated_at: new Date().toISOString(),
@@ -256,44 +306,83 @@ export default function TrackingPage() {
     return (
         <div className="flex h-full flex-col bg-slate-50">
             <header className="flex items-center justify-between border-b bg-white px-6 py-4 shadow-sm">
-                <h1 className="text-2xl font-bold text-slate-800">Rückerfassung</h1>
                 <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 rounded-md border bg-white px-2 py-1">
-                        <button onClick={() => setCurrentDate(addDays(currentDate, -1))} className="p-1 hover:bg-slate-100 rounded"><ChevronLeft className="h-5 w-5 text-slate-600" /></button>
-                        <span className="min-w-[140px] text-center font-medium text-slate-700">{format(currentDate, 'EEEE, d. MMM', { locale: de })}</span>
-                        <button onClick={() => setCurrentDate(addDays(currentDate, 1))} className="p-1 hover:bg-slate-100 rounded"><ChevronRight className="h-5 w-5 text-slate-600" /></button>
+                    <h1 className="text-2xl font-bold text-slate-800">Rückerfassung</h1>
+                    <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                        <button
+                            onClick={() => setViewMode('day')}
+                            className={cn(
+                                "px-3 py-1.5 text-sm font-medium rounded-md transition-all",
+                                viewMode === 'day' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                            )}
+                        >
+                            Tagesansicht
+                        </button>
+                        <button
+                            onClick={() => setViewMode('project')}
+                            className={cn(
+                                "px-3 py-1.5 text-sm font-medium rounded-md transition-all",
+                                viewMode === 'project' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                            )}
+                        >
+                            Projektansicht
+                        </button>
                     </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                    {viewMode === 'day' ? (
+                        <div className="flex items-center gap-2 rounded-md border bg-white px-2 py-1">
+                            <button onClick={() => setCurrentDate(addDays(currentDate, -1))} className="p-1 hover:bg-slate-100 rounded"><ChevronLeft className="h-5 w-5 text-slate-600" /></button>
+                            <span className="min-w-[140px] text-center font-medium text-slate-700">{format(currentDate, 'EEEE, d. MMM', { locale: de })}</span>
+                            <button onClick={() => setCurrentDate(addDays(currentDate, 1))} className="p-1 hover:bg-slate-100 rounded"><ChevronRight className="h-5 w-5 text-slate-600" /></button>
+                        </div>
+                    ) : (
+                        <div className="w-72">
+                            <SearchableSelect
+                                options={projects.map(p => ({ value: p.project_id, label: p.name || 'Unbenannt' }))}
+                                value={selectedProjectId}
+                                onChange={setSelectedProjectId}
+                                placeholder="Projekt auswählen..."
+                            />
+                        </div>
+                    )}
                 </div>
             </header>
 
             {/* Tab bar */}
             <div className="border-b bg-white px-6 flex items-center gap-4">
-                <div className="flex items-center gap-1 p-1">
-                    <button onClick={() => setActiveTab('timepairs')}
-                        className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                            activeTab === 'timepairs' ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-700")}>
-                        <Clock className="h-4 w-4" /> Zeitpaare ({rows.length})
-                    </button>
-                    <button onClick={() => setActiveTab('workassignments')}
-                        className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                            activeTab === 'workassignments' ? "bg-orange-50 text-orange-700" : "text-slate-500 hover:text-slate-700")}>
-                        <Briefcase className="h-4 w-4" /> Arbeitseinsätze ({workAssignments.length})
-                    </button>
-                </div>
+                {viewMode === 'day' && (
+                    <div className="flex items-center gap-1 p-1">
+                        <button onClick={() => setActiveTab('timepairs')}
+                            className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
+                                activeTab === 'timepairs' ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-700")}>
+                            <Clock className="h-4 w-4" /> Zeitpaare ({rows.length})
+                        </button>
+                        <button onClick={() => setActiveTab('workassignments')}
+                            className={cn("flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors",
+                                activeTab === 'workassignments' ? "bg-orange-50 text-orange-700" : "text-slate-500 hover:text-slate-700")}>
+                            <Briefcase className="h-4 w-4" /> Arbeitseinsätze ({workAssignments.length})
+                        </button>
+                    </div>
+                )}
+                {viewMode === 'project' && (
+                    <div className="py-3 text-sm font-medium text-slate-500">
+                        {rows.length} Zeiteinträge gefunden
+                    </div>
+                )}
+
                 <div className="ml-auto flex items-center gap-2">
                     {activeTab === 'timepairs' && (
                         <>
-                            <button onClick={handleCopyFromPlan}
-                                className="flex items-center gap-2 rounded-lg bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm">
-                                <Copy className="h-4 w-4" /> Aus Planung
-                            </button>
+
                             <button onClick={handleSave} disabled={saving}
                                 className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 shadow-sm disabled:opacity-50">
                                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
                             </button>
                         </>
                     )}
-                    {activeTab === 'workassignments' && (
+                    {activeTab === 'workassignments' && viewMode === 'day' && (
                         <button onClick={openCreateWa}
                             className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 shadow-sm">
                             <Plus className="h-4 w-4" /> Neuer Einsatz
@@ -304,90 +393,118 @@ export default function TrackingPage() {
 
             <div className="p-6 flex-1 overflow-auto">
                 {activeTab === 'timepairs' ? (
-                    /* ===== TIME PAIRS TABLE ===== */
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
-                                <tr>
-                                    <th className="px-4 py-3 w-[200px]">Projekt</th>
-                                    <th className="px-4 py-3 w-[160px]">Mitarbeiter</th>
-                                    <th className="px-3 py-3 w-[90px] text-center border-l border-blue-100 bg-blue-50/50 text-blue-700">LiS Von</th>
-                                    <th className="px-3 py-3 w-[90px] text-center bg-blue-50/50 text-blue-700">LiS Bis</th>
-                                    <th className="px-3 py-3 w-[70px] text-center bg-blue-50/50 text-blue-700">Σ LiS</th>
-                                    <th className="px-3 py-3 w-[90px] text-center border-l border-green-100 bg-green-50/50 text-green-700">Kd Von</th>
-                                    <th className="px-3 py-3 w-[90px] text-center bg-green-50/50 text-green-700">Kd Bis</th>
-                                    <th className="px-3 py-3 w-[70px] text-center bg-green-50/50 text-green-700">Σ Kd</th>
-                                    <th className="px-3 py-3 w-[60px] text-center">Pause</th>
-                                    <th className="px-3 py-3">Notizen</th>
-                                    <th className="w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {loading ? (
-                                    <tr><td colSpan={11} className="px-4 py-8 text-center text-slate-400"><Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /> Laden...</td></tr>
-                                ) : rows.length === 0 ? (
-                                    <tr><td colSpan={11} className="px-4 py-12 text-center text-slate-400">
-                                        <p>Keine Einträge für diesen Tag.</p>
-                                        <button onClick={handleCopyFromPlan} className="text-blue-600 hover:underline mt-2">Aus Planung übernehmen</button>
-                                    </td></tr>
-                                ) : rows.map((row) => (
-                                    <tr key={row._tempId} className="hover:bg-slate-50 group">
-                                        <td className="px-4 py-3">
-                                            <div className="font-medium text-slate-900 truncate">{row.project_name}</div>
-                                            <div className="text-xs text-slate-500">{row.project_code}</div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <select className="w-full bg-transparent border-none focus:ring-0 text-slate-900 text-sm"
-                                                value={row.employee_id || ''}
-                                                onChange={(e) => {
-                                                    const emp = employees.find(em => em.employee_id === e.target.value);
-                                                    updateRow(row._tempId, 'employee_id', e.target.value);
-                                                    if (emp) updateRow(row._tempId, 'mitarbeiter', emp.name);
-                                                }}>
-                                                <option value="">{row.mitarbeiter || 'Wählen...'}</option>
-                                                {employees.map(emp => <option key={emp.employee_id} value={emp.employee_id}>{emp.name}</option>)}
-                                            </select>
-                                        </td>
-                                        <td className="px-2 py-2 border-l border-blue-100 bg-blue-50/20">
-                                            <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                value={row.lis_von} onChange={(e) => updateRow(row._tempId, 'lis_von', e.target.value)} />
-                                        </td>
-                                        <td className="px-2 py-2 bg-blue-50/20">
-                                            <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                value={row.lis_bis} onChange={(e) => updateRow(row._tempId, 'lis_bis', e.target.value)} />
-                                        </td>
-                                        <td className="px-2 py-2 text-center text-sm font-semibold text-blue-700 bg-blue-50/20">{calculateHours(row.lis_von, row.lis_bis, row.pause_min)}</td>
-                                        <td className="px-2 py-2 border-l border-green-100 bg-green-50/20">
-                                            <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                value={row.kunde_von} onChange={(e) => updateRow(row._tempId, 'kunde_von', e.target.value)} />
-                                        </td>
-                                        <td className="px-2 py-2 bg-green-50/20">
-                                            <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                value={row.kunde_bis} onChange={(e) => updateRow(row._tempId, 'kunde_bis', e.target.value)} />
-                                        </td>
-                                        <td className="px-2 py-2 text-center text-sm font-semibold text-green-700 bg-green-50/20">{calculateHours(row.kunde_von, row.kunde_bis)}</td>
-                                        <td className="px-2 py-2">
-                                            <input type="number" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-1.5 py-1 text-center text-sm"
-                                                value={row.pause_min} onChange={(e) => updateRow(row._tempId, 'pause_min', parseInt(e.target.value) || 0)} />
-                                        </td>
-                                        <td className="px-2 py-2">
-                                            <input type="text" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm"
-                                                value={row.notes} onChange={(e) => updateRow(row._tempId, 'notes', e.target.value)} placeholder="Notiz..." />
-                                        </td>
-                                        <td className="px-2 text-center">
-                                            <button onClick={() => handleDelete(row)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-4 w-4" /></button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    /* ===== TIME PAIRS TABLE (GROUPED) ===== */
+                    <div className="space-y-8">
+                        {loading ? (
+                            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+                                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /> Laden...
+                            </div>
+                        ) : rows.length === 0 ? (
+                            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+                                <p>Keine Einträge gefunden.</p>
+                            </div>
+                        ) : (
+                            Object.entries(rows.reduce((acc, row) => {
+                                const key = row.project_id || 'unassigned';
+                                if (!acc[key]) acc[key] = [];
+                                acc[key].push(row);
+                                return acc;
+                            }, {} as Record<string, TrackingRow[]>)).map(([projectId, projectRows]) => {
+                                const projectTitle = projectId === 'unassigned' ? 'Ohne Projekt' : (projectRows[0]?.project_name || 'Unbenannt');
+                                const projectCode = projectId === 'unassigned' ? '' : (projectRows[0]?.project_code || '');
+
+                                return (
+                                    <div key={projectId} className="overflow-hidden">
+                                        {viewMode === 'day' && (
+                                            <div className="flex items-center justify-between mb-3 px-1">
+                                                <h3 className="text-lg font-bold text-slate-800">{projectTitle}</h3>
+                                                {projectCode && <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-500">{projectCode}</span>}
+                                            </div>
+                                        )}
+                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                            <table className="w-full text-left text-sm">
+                                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
+                                                    <tr>
+                                                        <th className="px-4 py-3 w-[200px] hidden">Projekt</th>
+                                                        {viewMode === 'project' && <th className="px-4 py-3 w-[120px]">Datum</th>}
+                                                        <th className="px-4 py-3 w-[160px]">Mitarbeiter</th>
+                                                        <th className="px-3 py-3 w-[90px] text-center border-l border-blue-100 bg-blue-50/50 text-blue-700">LiS Von</th>
+                                                        <th className="px-3 py-3 w-[90px] text-center bg-blue-50/50 text-blue-700">LiS Bis</th>
+                                                        <th className="px-3 py-3 w-[70px] text-center bg-blue-50/50 text-blue-700">Σ LiS</th>
+                                                        <th className="px-3 py-3 w-[90px] text-center border-l border-green-100 bg-green-50/50 text-green-700">Kd Von</th>
+                                                        <th className="px-3 py-3 w-[90px] text-center bg-green-50/50 text-green-700">Kd Bis</th>
+                                                        <th className="px-3 py-3 w-[70px] text-center bg-green-50/50 text-green-700">Σ Kd</th>
+                                                        <th className="px-3 py-3 w-[60px] text-center">Pause</th>
+                                                        <th className="px-3 py-3">Notizen</th>
+                                                        <th className="w-10"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {projectRows.map((row) => (
+                                                        <tr key={row._tempId} className="hover:bg-slate-50 group">
+                                                            <td className="px-4 py-3 hidden"></td>
+                                                            {viewMode === 'project' && (
+                                                                <td className="px-4 py-3 text-sm text-slate-600">
+                                                                    {row.datum ? format(new Date(row.datum), 'dd.MM.yyyy') : '—'}
+                                                                </td>
+                                                            )}
+                                                            <td className="px-4 py-3">
+                                                                <select className="w-full bg-transparent border-none focus:ring-0 text-slate-900 text-sm"
+                                                                    value={row.employee_id || ''}
+                                                                    onChange={(e) => {
+                                                                        const emp = employees.find(em => em.employee_id === e.target.value);
+                                                                        updateRow(row._tempId, 'employee_id', e.target.value);
+                                                                        if (emp) updateRow(row._tempId, 'mitarbeiter', emp.name);
+                                                                    }}>
+                                                                    <option value="">{row.mitarbeiter || 'Wählen...'}</option>
+                                                                    {employees.map(emp => <option key={emp.employee_id} value={emp.employee_id}>{emp.name}</option>)}
+                                                                </select>
+                                                            </td>
+                                                            <td className="px-2 py-2 border-l border-blue-100 bg-blue-50/20">
+                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    value={row.lis_von} onChange={(e) => updateRow(row._tempId, 'lis_von', e.target.value)} />
+                                                            </td>
+                                                            <td className="px-2 py-2 bg-blue-50/20">
+                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    value={row.lis_bis} onChange={(e) => updateRow(row._tempId, 'lis_bis', e.target.value)} />
+                                                            </td>
+                                                            <td className="px-2 py-2 text-center text-sm font-semibold text-blue-700 bg-blue-50/20">{calculateHours(row.lis_von, row.lis_bis, row.pause_min)}</td>
+                                                            <td className="px-2 py-2 border-l border-green-100 bg-green-50/20">
+                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                                    value={row.kunde_von} onChange={(e) => updateRow(row._tempId, 'kunde_von', e.target.value)} />
+                                                            </td>
+                                                            <td className="px-2 py-2 bg-green-50/20">
+                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                                    value={row.kunde_bis} onChange={(e) => updateRow(row._tempId, 'kunde_bis', e.target.value)} />
+                                                            </td>
+                                                            <td className="px-2 py-2 text-center text-sm font-semibold text-green-700 bg-green-50/20">{calculateHours(row.kunde_von, row.kunde_bis)}</td>
+                                                            <td className="px-2 py-2">
+                                                                <input type="number" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-1.5 py-1 text-center text-sm"
+                                                                    value={row.pause_min} onChange={(e) => updateRow(row._tempId, 'pause_min', parseInt(e.target.value) || 0)} />
+                                                            </td>
+                                                            <td className="px-2 py-2">
+                                                                <input type="text" className="w-full bg-transparent border border-transparent hover:border-slate-200 rounded px-2 py-1 text-sm"
+                                                                    value={row.notes} onChange={(e) => updateRow(row._tempId, 'notes', e.target.value)} placeholder="Notiz..." />
+                                                            </td>
+                                                            <td className="px-2 text-center">
+                                                                <button onClick={() => handleDelete(row)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-4 w-4" /></button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
                 ) : (
                     /* ===== WORK ASSIGNMENTS TABLE ===== */
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
-                                <tr>
+                                <tr >
                                     <th className="px-4 py-3">Typ</th>
                                     <th className="px-4 py-3">Mitarbeiter</th>
                                     <th className="px-4 py-3 text-center">Start</th>

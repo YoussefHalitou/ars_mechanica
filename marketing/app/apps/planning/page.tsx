@@ -51,7 +51,7 @@ function DraggableProject({ project }: { project: Project }) {
 
 // ================ DROPPABLE DAY ================
 function DroppableDay({ day, plans, onDelete, onOpenStaff, onEditPlan }: {
-    day: Date; plans: MorningPlan[]; onDelete: (id: string) => void; onOpenStaff: (plan: MorningPlan) => void; onEditPlan: (plan: MorningPlan) => void;
+    day: Date; plans: MorningPlan[]; onDelete: (id: string, e: React.MouseEvent) => void; onOpenStaff: (plan: MorningPlan) => void; onEditPlan: (plan: MorningPlan) => void;
 }) {
     const dateStr = format(day, 'yyyy-MM-dd');
     const { setNodeRef, isOver } = useDroppable({ id: `day-${dateStr}`, data: { date: dateStr } });
@@ -71,7 +71,7 @@ function DroppableDay({ day, plans, onDelete, onOpenStaff, onEditPlan }: {
                     <div key={plan.plan_id} className="relative rounded-md border border-slate-200 bg-white p-2 shadow-sm group hover:border-blue-200 transition-colors">
                         <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
                             <button onClick={() => onEditPlan(plan)} className="text-slate-400 hover:text-blue-600 text-xs p-0.5"><Pencil className="h-3 w-3" /></button>
-                            <button onClick={() => onDelete(plan.plan_id)} className="text-slate-400 hover:text-red-500 text-xs p-0.5">×</button>
+                            <button onClick={(e) => onDelete(plan.plan_id, e)} type="button" className="text-slate-400 hover:text-red-500 text-xs p-0.5">×</button>
                         </div>
                         <div className="text-xs font-semibold text-blue-700 truncate mb-0.5">{plan.project?.name || 'Unbekannt'}</div>
                         <div className="text-[10px] text-slate-500 flex items-center gap-2 mb-1">
@@ -253,7 +253,8 @@ export default function PlanningPage() {
         setSavingPlan(false);
     };
 
-    const handleDeletePlan = async (planId: string) => {
+    const handleDeletePlan = async (planId: string, e?: React.MouseEvent) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!confirm('Einsatz wirklich löschen?')) return;
         const prev = [...plans];
         setPlans(p => p.filter(x => x.plan_id !== planId));

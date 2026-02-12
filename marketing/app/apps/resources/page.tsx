@@ -106,7 +106,8 @@ function EmployeesTab() {
         setSaving(false);
     };
 
-    const remove = async (id: string) => {
+    const remove = async (id: string, e?: React.MouseEvent) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!confirm('Mitarbeiter wirklich löschen?')) return;
         setItems(prev => prev.filter(e => e.employee_id !== id));
         const { error } = await supabase.from('t_employees').delete().eq('employee_id', id);
@@ -143,7 +144,7 @@ function EmployeesTab() {
                                 <td className="px-4 py-3" onClick={ev => ev.stopPropagation()}>
                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={() => openEdit(e)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
-                                        <button onClick={() => remove(e.employee_id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                        <button onClick={(ev) => remove(e.employee_id, ev)} type="button" className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                                     </div>
                                 </td>
                             </tr>
@@ -226,7 +227,8 @@ function VehiclesTab() {
         setSaving(false);
     };
 
-    const remove = async (id: string) => {
+    const remove = async (id: string, e?: React.MouseEvent) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!confirm('Fahrzeug wirklich löschen?')) return;
         setItems(prev => prev.filter(v => v.vehicle_id !== id));
         const { error } = await supabase.from('t_vehicles').update({ is_deleted: true }).eq('vehicle_id', id);
@@ -260,7 +262,7 @@ function VehiclesTab() {
                                 <td className="px-4 py-3" onClick={ev => ev.stopPropagation()}>
                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={() => openEdit(v)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
-                                        <button onClick={() => remove(v.vehicle_id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                        <button onClick={(e) => remove(v.vehicle_id, e)} type="button" className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                                     </div>
                                 </td>
                             </tr>
@@ -301,10 +303,14 @@ function MaterialsTab() {
     useEffect(() => { fetch(); }, [fetch]);
 
     const openNew = () => {
-        setEditing({ material_id: '', name: '', unit: 'Stk', category: '', vat_rate: 19 });
+        setEditing({ material_id: '', name: '', unit: 'Stk', category: '', vat_rate: 19, cost_per_unit: 0, price_per_unit: 0 });
         setIsNew(true);
     };
-    const openEdit = (m: any) => { setEditing({ ...m }); setIsNew(false); };
+    const openEdit = (m: any) => {
+        const p = Array.isArray(m.prices) ? m.prices[0] : m.prices;
+        setEditing({ ...m, cost_per_unit: p?.cost_per_unit || 0, price_per_unit: p?.price_per_unit || 0 });
+        setIsNew(false);
+    };
 
     const save = async () => {
         if (!editing?.name) return;
@@ -317,6 +323,9 @@ function MaterialsTab() {
                     category: editing.category || null, vat_rate: editing.vat_rate || 19, is_active: true,
                 });
                 if (error) throw error;
+                await supabase.from('t_material_prices').upsert({
+                    material_id: id, cost_per_unit: Number(editing.cost_per_unit) || 0, price_per_unit: Number(editing.price_per_unit) || 0
+                });
                 toast('Material erstellt');
             } else {
                 const { error } = await supabase.from('t_materials').update({
@@ -324,6 +333,9 @@ function MaterialsTab() {
                     vat_rate: editing.vat_rate,
                 }).eq('material_id', editing.material_id);
                 if (error) throw error;
+                await supabase.from('t_material_prices').upsert({
+                    material_id: editing.material_id, cost_per_unit: Number(editing.cost_per_unit) || 0, price_per_unit: Number(editing.price_per_unit) || 0
+                });
                 toast('Material aktualisiert');
             }
             setEditing(null); fetch();
@@ -331,7 +343,8 @@ function MaterialsTab() {
         setSaving(false);
     };
 
-    const remove = async (id: string) => {
+    const remove = async (id: string, e?: React.MouseEvent) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!confirm('Material wirklich löschen?')) return;
         setItems(prev => prev.filter(m => m.material_id !== id));
         const { error } = await supabase.from('t_materials').update({ is_active: false }).eq('material_id', id);
@@ -369,7 +382,7 @@ function MaterialsTab() {
                                     <td className="px-4 py-3" onClick={ev => ev.stopPropagation()}>
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button onClick={() => openEdit(m)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
-                                            <button onClick={() => remove(m.material_id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                            <button onClick={(e) => remove(m.material_id, e)} type="button" className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -385,6 +398,8 @@ function MaterialsTab() {
                         <Field label="Einheit" value={editing.unit || ''} onChange={v => setEditing({ ...editing, unit: v })} placeholder="z.B. Stk, m², Rolle" />
                         <Field label="Kategorie" value={editing.category || ''} onChange={v => setEditing({ ...editing, category: v })} />
                         <Field label="MwSt (%)" value={String(editing.vat_rate || '')} onChange={v => setEditing({ ...editing, vat_rate: parseFloat(v) || 0 })} type="number" />
+                        <Field label="EK/Einheit (€)" value={String(editing.cost_per_unit || '')} onChange={v => setEditing({ ...editing, cost_per_unit: v })} type="number" />
+                        <Field label="VK/Einheit (€)" value={String(editing.price_per_unit || '')} onChange={v => setEditing({ ...editing, price_per_unit: v })} type="number" />
                     </div>
                 </Modal>
             )}
@@ -439,7 +454,8 @@ function ServicesTab() {
         setSaving(false);
     };
 
-    const remove = async (id: string) => {
+    const remove = async (id: string, e?: React.MouseEvent) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!confirm('Leistung wirklich löschen?')) return;
         setItems(prev => prev.filter(s => s.service_id !== id));
         const { error } = await supabase.from('t_services').update({ is_active: false }).eq('service_id', id);
@@ -481,7 +497,7 @@ function ServicesTab() {
                                 <td className="px-4 py-3" onClick={ev => ev.stopPropagation()}>
                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={() => openEdit(s)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
-                                        <button onClick={() => remove(s.service_id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                        <button onClick={(e) => remove(s.service_id, e)} type="button" className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                                     </div>
                                 </td>
                             </tr>

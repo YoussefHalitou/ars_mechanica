@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 
 type Project = Database['public']['Tables']['t_projects']['Row'];
 
@@ -107,7 +108,9 @@ export default function CalculationPage() {
     const loadProjectData = async (pid: string) => {
         setLoading(true);
         const proj = projects.find(p => p.project_id === pid) || null;
-        setSelectedProject(proj);
+        if (proj) setSelectedProject(proj);
+
+
 
         const { data: employees } = await supabase.from('t_employees').select('employee_id, name, hourly_rate, role');
         const rateMap: Record<string, { rate: number; role: string | null }> = {};
@@ -398,11 +401,17 @@ export default function CalculationPage() {
                     <h1 className="text-2xl font-bold text-slate-800">Nachkalkulation</h1>
                 </div>
                 <div className="flex items-center gap-3">
-                    <select className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium min-w-[300px]"
-                        value={selectedProjectId} onChange={e => setSelectedProjectId(e.target.value)}>
-                        <option value="">Projekt auswählen...</option>
-                        {projects.map(p => <option key={p.project_id} value={p.project_id}>{p.project_code || '—'} | {p.name || 'Unbenannt'} | {p.ort || ''}</option>)}
-                    </select>
+                    <div className="w-[400px]">
+                        <SearchableSelect
+                            options={projects.map(p => ({
+                                value: p.project_id,
+                                label: `${p.project_code ? p.project_code + ' | ' : ''}${p.name || 'Unbenannt'}${p.ort ? ' | ' + p.ort : ''}`
+                            }))}
+                            value={selectedProjectId}
+                            onChange={setSelectedProjectId}
+                            placeholder="Projekt auswählen..."
+                        />
+                    </div>
                     {selectedProject && <button onClick={exportHTML} className="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 shadow-sm"><FileText className="h-4 w-4" /> Export</button>}
                 </div>
             </header>

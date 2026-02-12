@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { useDebounce } from '@/hooks/useDebounce';
-import { format } from 'date-fns';
+import { format, parseISO, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
 import {
     Search, Plus, Pencil, Trash2, X, Save, Loader2, ChevronDown,
@@ -88,6 +88,25 @@ export default function ProjectsPage() {
 
     useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
+    // Group projects by date
+    const groupedProjects = useMemo(() => {
+        const groups: Record<string, Project[]> = {};
+        projects.forEach(p => {
+            const dateKey = p.project_date || 'nodate';
+            if (!groups[dateKey]) groups[dateKey] = [];
+            groups[dateKey].push(p);
+        });
+        return groups;
+    }, [projects]);
+
+    const sortedGroups = useMemo(() => {
+        return Object.keys(groupedProjects).sort((a, b) => {
+            if (a === 'nodate') return 1;
+            if (b === 'nodate') return -1;
+            return new Date(b).getTime() - new Date(a).getTime();
+        });
+    }, [groupedProjects]);
+
     // Load detail data when a project is selected
     const loadProjectDetail = async (project: Project) => {
         setSelectedProject(project);
@@ -171,7 +190,8 @@ export default function ProjectsPage() {
         }
     };
 
-    const handleDelete = async (id: string) => {
+    const handleDelete = async (id: string, e?: React.MouseEvent) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!confirm('Projekt wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) return;
         setProjects(prev => prev.filter(p => p.project_id !== id));
         if (selectedProject?.project_id === id) setSelectedProject(null);
@@ -274,74 +294,94 @@ export default function ProjectsPage() {
                     </div>
                 </div>
 
-                {/* Table */}
-                <div className="flex-1 overflow-auto p-6">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                                <tr>
-                                    <th className="px-4 py-3">Kunde</th>
-                                    <th className="px-4 py-3">Adresse</th>
-                                    <th className="px-4 py-3">Kontakt</th>
-                                    <th className="px-4 py-3">Dienstleistung</th>
-                                    <th className="px-4 py-3">Datum</th>
-                                    <th className="w-20"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {loading ? (
-                                    <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /> Projekte laden...
-                                    </td></tr>
-                                ) : projects.length === 0 ? (
-                                    <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                                        Keine Projekte gefunden.
-                                    </td></tr>
-                                ) : projects.map(p => (
-                                    <tr key={p.project_id}
-                                        className={cn(
-                                            "hover:bg-slate-50 group cursor-pointer transition-colors",
-                                            selectedProject?.project_id === p.project_id && "bg-blue-50 hover:bg-blue-50"
-                                        )}
-                                        onClick={() => loadProjectDetail(p)}>
-                                        <td className="px-4 py-3">
-                                            <div className="font-medium text-slate-900">
-                                                {p.anrede ? `${p.anrede} ` : ''}{p.name || 'Unbenannt'}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-slate-600">
-                                            <div className="flex items-center gap-1.5">
-                                                <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                                                <span className="truncate max-w-[200px]">
-                                                    {[p.strasse, p.nr].filter(Boolean).join(' ')}{p.strasse ? ', ' : ''}{p.plz} {p.ort}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-slate-600">
-                                            {p.telefon && <div className="flex items-center gap-1 text-xs"><Phone className="h-3 w-3" />{p.telefon}</div>}
-                                            {p.email && <div className="flex items-center gap-1 text-xs"><Mail className="h-3 w-3" />{p.email}</div>}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            {p.dienstleistungen && (
-                                                <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', SERVICE_COLORS[p.dienstleistungen] || SERVICE_COLORS['Sonstiges'])}>
-                                                    {p.dienstleistungen}
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-3 text-slate-600 text-xs">
-                                            {p.project_date ? format(new Date(p.project_date), 'dd.MM.yyyy') : '—'}
-                                        </td>
-                                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => openEdit(p)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
-                                                <button onClick={() => handleDelete(p.project_id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                {/* Table Area (Grouped) */}
+                <div className="flex-1 overflow-auto p-6 space-y-8">
+                    {loading ? (
+                        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+                            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /> Projekte laden...
+                        </div>
+                    ) : projects.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400">
+                            Keine Projekte gefunden.
+                        </div>
+                    ) : (
+                        sortedGroups.map(dateKey => {
+                            const dateProjects = groupedProjects[dateKey];
+                            const dateLabel = dateKey === 'nodate' ? 'Ohne Datum' : format(parseISO(dateKey), 'EEEE, d. MMMM yyyy', { locale: de });
+                            const isToday = dateKey === format(new Date(), 'yyyy-MM-dd');
+
+                            return (
+                                <div key={dateKey}>
+                                    <div className="flex items-center gap-2 mb-3 px-1">
+                                        <h3 className={cn("text-lg font-bold", isToday ? "text-blue-600" : "text-slate-800")}>
+                                            {dateLabel}
+                                        </h3>
+                                        <span className="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                                            {dateProjects.length}
+                                        </span>
+                                    </div>
+                                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                                <tr>
+                                                    <th className="px-4 py-3 w-[250px]">Kunde</th>
+                                                    <th className="px-4 py-3">Adresse</th>
+                                                    <th className="px-4 py-3">Kontakt</th>
+                                                    <th className="px-4 py-3">Dienstleistung</th>
+                                                    <th className="px-4 py-3 w-[100px]">Uhrzeit</th>
+                                                    <th className="w-20"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {dateProjects.map(p => (
+                                                    <tr key={p.project_id}
+                                                        className={cn(
+                                                            "hover:bg-slate-50 group cursor-pointer transition-colors",
+                                                            selectedProject?.project_id === p.project_id && "bg-blue-50 hover:bg-blue-50"
+                                                        )}
+                                                        onClick={() => loadProjectDetail(p)}>
+                                                        <td className="px-4 py-3">
+                                                            <div className="font-medium text-slate-900 truncate">
+                                                                {p.anrede ? `${p.anrede} ` : ''}{p.name || 'Unbenannt'}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                                                <span className="truncate max-w-[200px]">
+                                                                    {[p.strasse, p.nr].filter(Boolean).join(' ')}{p.strasse ? ', ' : ''}{p.plz} {p.ort}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600">
+                                                            {p.telefon && <div className="flex items-center gap-1 text-xs mb-1"><Phone className="h-3 w-3" />{p.telefon}</div>}
+                                                            {p.email && <div className="flex items-center gap-1 text-xs"><Mail className="h-3 w-3" />{p.email}</div>}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            {p.dienstleistungen && (
+                                                                <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full', SERVICE_COLORS[p.dienstleistungen] || SERVICE_COLORS['Sonstiges'])}>
+                                                                    {p.dienstleistungen}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 text-xs font-mono">
+                                                            {p.project_time || '—'}
+                                                        </td>
+                                                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <button onClick={() => openEdit(p)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Pencil className="h-4 w-4" /></button>
+                                                                <button onClick={(e) => handleDelete(p.project_id, e)} type="button" className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
             </div>
 
@@ -446,7 +486,7 @@ export default function ProjectsPage() {
                                         className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 shadow-sm">
                                         <Pencil className="h-4 w-4" /> Bearbeiten
                                     </button>
-                                    <button onClick={() => handleDelete(selectedProject.project_id)}
+                                    <button onClick={(e) => handleDelete(selectedProject.project_id, e)} type="button"
                                         className="flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">
                                         <Trash2 className="h-4 w-4" /> Löschen
                                     </button>
