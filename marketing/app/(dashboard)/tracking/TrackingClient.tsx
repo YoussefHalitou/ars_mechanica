@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Save, Copy, Loader2, Trash2, Plus, X, Pencil
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
+import { formatTimeInput } from '@/lib/timeUtils';
 
 import { SearchableSelect } from '@/components/ui/searchable-select';
 
@@ -471,21 +472,33 @@ export default function TrackingPage() {
                                                                 </select>
                                                             </td>
                                                             <td className="px-2 py-2 border-l border-blue-100 bg-blue-50/20">
-                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                                    value={row.lis_von} onChange={(e) => updateRow(row._tempId, 'lis_von', e.target.value)} />
+                                                                <input type="text" maxLength={5} placeholder="00:00" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    value={row.lis_von}
+                                                                    onChange={(e) => updateRow(row._tempId, 'lis_von', e.target.value)}
+                                                                    onBlur={(e) => updateRow(row._tempId, 'lis_von', formatTimeInput(e.target.value))}
+                                                                />
                                                             </td>
                                                             <td className="px-2 py-2 bg-blue-50/20">
-                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                                    value={row.lis_bis} onChange={(e) => updateRow(row._tempId, 'lis_bis', e.target.value)} />
+                                                                <input type="text" maxLength={5} placeholder="00:00" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                    value={row.lis_bis}
+                                                                    onChange={(e) => updateRow(row._tempId, 'lis_bis', e.target.value)}
+                                                                    onBlur={(e) => updateRow(row._tempId, 'lis_bis', formatTimeInput(e.target.value))}
+                                                                />
                                                             </td>
                                                             <td className="px-2 py-2 text-center text-sm font-semibold text-blue-700 bg-blue-50/20">{calculateHours(row.lis_von, row.lis_bis, row.pause_min)}</td>
                                                             <td className="px-2 py-2 border-l border-green-100 bg-green-50/20">
-                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                                    value={row.kunde_von} onChange={(e) => updateRow(row._tempId, 'kunde_von', e.target.value)} />
+                                                                <input type="text" maxLength={5} placeholder="00:00" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                                    value={row.kunde_von}
+                                                                    onChange={(e) => updateRow(row._tempId, 'kunde_von', e.target.value)}
+                                                                    onBlur={(e) => updateRow(row._tempId, 'kunde_von', formatTimeInput(e.target.value))}
+                                                                />
                                                             </td>
                                                             <td className="px-2 py-2 bg-green-50/20">
-                                                                <input type="time" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                                                                    value={row.kunde_bis} onChange={(e) => updateRow(row._tempId, 'kunde_bis', e.target.value)} />
+                                                                <input type="text" maxLength={5} placeholder="00:00" className="w-full bg-white border border-slate-200 rounded px-1.5 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                                                    value={row.kunde_bis}
+                                                                    onChange={(e) => updateRow(row._tempId, 'kunde_bis', e.target.value)}
+                                                                    onBlur={(e) => updateRow(row._tempId, 'kunde_bis', formatTimeInput(e.target.value))}
+                                                                />
                                                             </td>
                                                             <td className="px-2 py-2 text-center text-sm font-semibold text-green-700 bg-green-50/20">{calculateHours(row.kunde_von, row.kunde_bis)}</td>
                                                             <td className="px-2 py-2">
