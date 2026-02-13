@@ -22,15 +22,13 @@ export function PlanningExport() {
             ] = await Promise.all([
                 supabase.from('t_morningplan')
                     .select('*, project:t_projects(*), staff:t_morningplan_staff(*, employee:t_employees(*))')
-                    .eq('plan_date', date)
-                    .order('sort_order', { ascending: true }),
+                    .eq('plan_date', date),
                 supabase.from('t_vehicle_daily_status')
                     .select('*')
                     .eq('plan_date', date),
                 supabase.from('t_employee_daily_notes')
                     .select('*')
-                    .eq('plan_date', date)
-                    .order('sort_order', { ascending: true }),
+                    .eq('plan_date', date),
                 supabase.from('t_employees').select('*')
             ]);
 
@@ -54,15 +52,34 @@ export function PlanningExport() {
             // but the retool snippet implies it only shows those with status/info.
             const vehicleRows = (vehicleStatuses || []).filter(v => v.status || v.informationen);
 
+
+            // Sort Functions (Matching PlanningClient logic)
+            const sortPlans = (a: any, b: any) => {
+                const orderA = a.sort_order || 0;
+                const orderB = b.sort_order || 0;
+                if (orderA !== orderB) return orderA - orderB;
+                return (a.start_time || '07:00').localeCompare(b.start_time || '07:00');
+            };
+
+            const sortStaff = (a: any, b: any) => {
+                return (a.sort_order || 0) - (b.sort_order || 0);
+            };
+
+            const sortNotes = (a: any, b: any) => {
+                return (a.sort_order || 0) - (b.sort_order || 0);
+            };
+
             // Cards
-            const cards = (plans || []).map(p => {
+            const sortedPlans = (plans || []).sort(sortPlans);
+
+            const cards = sortedPlans.map(p => {
                 // Determine project name/address from joined project or plan fallback? 
                 // schema: p.project is the joined object.
                 const proj = p.project || {};
 
                 // Map staff
                 const teamMembers = (p.staff || [])
-                    .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+                    .sort(sortStaff)
                     .map((s: any) => ({
                         employee_name: s.employee?.name || 'Unbekannt',
                         individual_start_time: s.individual_start_time,
@@ -89,24 +106,26 @@ export function PlanningExport() {
 
             // Employees
             // Join notes with employee names
-            const notesWithNames = (employeeNotes || []).map(n => {
-                let name = '';
-                // Try to find employee by ID if available (schema check needed) or code
-                // t_employee_daily_notes has employee_id and employee_code
-                if (n.employee_id && employeeMap.has(n.employee_id)) {
-                    name = employeeMap.get(n.employee_id)!.name;
-                } else if (n.employee_code) {
-                    const emp = employees?.find(e => e.employee_code === n.employee_code);
-                    name = emp ? emp.name : n.employee_code;
-                }
-                const empObj = n.employee_id ? employeeMap.get(n.employee_id) : null;
+            const notesWithNames = (employeeNotes || [])
+                .sort(sortNotes)
+                .map(n => {
+                    let name = '';
+                    // Try to find employee by ID if available (schema check needed) or code
+                    // t_employee_daily_notes has employee_id and employee_code
+                    if (n.employee_id && employeeMap.has(n.employee_id)) {
+                        name = employeeMap.get(n.employee_id)!.name;
+                    } else if (n.employee_code) {
+                        const emp = employees?.find(e => e.employee_code === n.employee_code);
+                        name = emp ? emp.name : n.employee_code;
+                    }
+                    const empObj = n.employee_id ? employeeMap.get(n.employee_id) : null;
 
-                return {
-                    name,
-                    notizen: n.notizen,
-                    is_external: empObj?.contract_type === 'Freelancer' || empObj?.role === 'Subunternehmer' // Simple heuristic
-                };
-            });
+                    return {
+                        name,
+                        notizen: n.notizen,
+                        is_external: empObj?.contract_type === 'Freelancer' || empObj?.role === 'Subunternehmer' // Simple heuristic
+                    };
+                });
 
             const employeesInternal = notesWithNames.filter(e => !e.is_external);
             const employeesExternal = notesWithNames.filter(e => e.is_external);
