@@ -1,0 +1,6 @@
+name: test
+logo_url: ""
+primary_color: #ff0000
+enabled_modules:
+extra_menu: []
+tenant_id: test
