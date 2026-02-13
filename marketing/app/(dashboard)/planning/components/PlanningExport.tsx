@@ -16,200 +16,344 @@ export function PlanningExport() {
             // 1. Fetch Data
             const [
                 { data: plans },
-                { data: timePairs },
-                { data: employees },
-                { data: vehicleCosts },
-                { data: projects }
+                { data: vehicleStatuses },
+                { data: employeeNotes },
+                { data: employees }
             ] = await Promise.all([
                 supabase.from('t_morningplan')
-                    .select('*, project:t_projects(*)')
+                    .select('*, project:t_projects(*), staff:t_morningplan_staff(*, employee:t_employees(*))')
                     .eq('plan_date', date),
-                supabase.from('t_time_pairs')
+                supabase.from('t_vehicle_daily_status')
                     .select('*')
-                    .eq('datum', date),
-                supabase.from('t_employees').select('*'),
-                // Vehicle costs might be linked to projects on this day?
-                // Or maybe explicitly created for this day? Usually project costs are per project, not per day.
-                // But let's fetch costs for projects active on this day.
-                supabase.from('t_project_vehicle_costs').select('*'),
-                supabase.from('t_projects').select('*')
+                    .eq('plan_date', date),
+                supabase.from('t_employee_daily_notes')
+                    .select('*')
+                    .eq('plan_date', date),
+                supabase.from('t_employees').select('*')
             ]);
 
-            const activeProjectIds = new Set(plans?.map(p => p.project_id).filter(Boolean) as string[]);
-
-            // Filter relevant data
-            const dayTimePairs = (timePairs || []).filter(tp => tp.project_id && activeProjectIds.has(tp.project_id));
-            const dayVehicleCosts = (vehicleCosts || []).filter(vc => vc.project_id && activeProjectIds.has(vc.project_id));
-
-            // Map Employees for rates
             const employeeMap = new Map(employees?.map(e => [e.employee_id, e]));
 
-            // Generate HTML
-            let html = `
-    < !DOCTYPE html >
-        <html lang="de">
-            <head>
-                <meta charset="UTF-8">
-                    <title>Nachkalkulation ${date}</title>
-                    <style>
-                        body {font - family: sans-serif; padding: 20px; line-height: 1.5; color: #333; }
-                        h1 {color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 10px; }
-                        h2 {margin - top: 30px; color: #475569; background: #f1f5f9; padding: 8px; border-radius: 4px; }
-                        table {width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
-                        th, td {border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
-                        th {background - color: #f8fafc; font-weight: 600; color: #475569; }
-                        .text-right {text - align: right; }
-                        .font-bold {font - weight: bold; }
-                        .total-row {background - color: #f0f9ff; font-weight: bold; }
-                        .cost-positive {color: #dc2626; } /* Costs are red/expense */
-                        .profit-positive {color: #16a34a; } /* Profit is green */
-                        .meta {margin - bottom: 20px; color: #64748b; font-size: 0.9em; }
-                    </style>
-            </head>
-            <body>
-                <h1>Nachkalkulation: ${format(new Date(date), 'dd.MM.yyyy')}</h1>
-                <div class="meta">Exportiert am ${new Date().toLocaleString('de-DE')}</div>
-                `;
+            // Helper to escape HTML
+            const escapeHtml = (str: any) => {
+                if (str == null) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
 
-            if (!plans || plans.length === 0) {
-                html += `<p>Keine Projekte für dieses Datum gefunden.</p>`;
-            } else {
-                activeProjectIds.forEach(projectId => {
-                    const project = projects?.find(p => p.project_id === projectId);
-                    const safeName = project?.name || 'Unbekanntes Projekt';
-                    const safeCode = project?.project_code || '';
+            // Prepare Data
 
-                    // Data for this project
-                    const projTimePairs = dayTimePairs.filter(tp => tp.project_id === projectId);
-                    const projVehicleCosts = dayVehicleCosts.filter(vc => vc.project_id === projectId);
+            // Vehicles
+            // Map statuses to a list. If we want all vehicles we might need to fetch t_vehicles too, 
+            // but the retool snippet implies it only shows those with status/info.
+            const vehicleRows = (vehicleStatuses || []).filter(v => v.status || v.informationen);
 
-                    // Calc Labor
-                    let totalLaborCost = 0;
-                    let totalHours = 0;
+            // Cards
+            const cards = (plans || []).map(p => {
+                // Determine project name/address from joined project or plan fallback? 
+                // schema: p.project is the joined object.
+                const proj = p.project || {};
 
-                    const laborRows = projTimePairs.map(tp => {
-                        const emp = employees?.find(e => e.name === tp.mitarbeiter); // Match by name if ID missing in timepair? Timepair usually has name.
-                        // Best effort match
-                        const rate = emp?.hourly_rate || 0;
+                // Map staff
+                const teamMembers = (p.staff || []).map((s: any) => ({
+                    employee_name: s.employee?.name || 'Unbekannt',
+                    individual_start_time: s.individual_start_time,
+                    member_notes: s.member_notes
+                }));
 
-                        // Calc hours
-                        let hours = 0;
-                        if (tp.lis_von && tp.lis_bis) {
-                            const [h1, m1] = tp.lis_von.split(':').map(Number);
-                            const [h2, m2] = tp.lis_bis.split(':').map(Number);
-                            const mins = (h2 * 60 + m2) - (h1 * 60 + m1) - (tp.pause_min || 0);
-                            hours = mins > 0 ? mins / 60 : 0;
-                        }
+                return {
+                    anrede: proj.anrede,
+                    name: proj.name,
+                    strasse: proj.strasse,
+                    nr: proj.nr,
+                    plz: proj.plz,
+                    ort: proj.ort,
+                    telefon: proj.telefon,
+                    service_type: p.service_type || proj.dienstleistungen,
+                    notes: p.notes || proj.notes, // Plan notes priority?
+                    start_time: p.start_time,
+                    vehicle_name: p.vehicle_names, // or lookup vehicle_id?
+                    offer_type: p.angebotsart || proj.offer_type,
+                    plan_date: p.plan_date,
+                    teamMembers
+                };
+            });
 
-                        const cost = hours * rate;
-                        totalLaborCost += cost;
-                        totalHours += hours;
+            // Employees
+            // Join notes with employee names
+            const notesWithNames = (employeeNotes || []).map(n => {
+                let name = '';
+                // Try to find employee by ID if available (schema check needed) or code
+                // t_employee_daily_notes has employee_id and employee_code
+                if (n.employee_id && employeeMap.has(n.employee_id)) {
+                    name = employeeMap.get(n.employee_id)!.name;
+                } else if (n.employee_code) {
+                    const emp = employees?.find(e => e.employee_code === n.employee_code);
+                    name = emp ? emp.name : n.employee_code;
+                }
+                const empObj = n.employee_id ? employeeMap.get(n.employee_id) : null;
 
-                        return `
-                            <tr>
-                                <td>${tp.mitarbeiter}</td>
-                                <td>${tp.lis_von?.substring(0, 5)} - ${tp.lis_bis?.substring(0, 5)}</td>
-                                <td class="text-right">${hours.toFixed(2)} h</td>
-                                <td class="text-right">${rate.toFixed(2)} €</td>
-                                <td class="text-right">${cost.toFixed(2)} €</td>
-                            </tr>
-                        `;
-                    }).join('');
+                return {
+                    name,
+                    notizen: n.notizen,
+                    is_external: empObj?.contract_type === 'Freelancer' || empObj?.role === 'Subunternehmer' // Simple heuristic
+                };
+            });
 
-                    // Calc Vehicle
-                    let totalVehicleCost = 0;
-                    const vehicleRows = projVehicleCosts.map(vc => {
-                        const cost = vc.total_cost || 0;
-                        totalVehicleCost += cost;
-                        return `
-                            <tr>
-                                <td>${vc.usage_type}</td>
-                                <td>${vc.notes || '-'}</td>
-                                <td class="text-right">-</td>
-                                <td class="text-right">-</td>
-                                <td class="text-right">${cost.toFixed(2)} €</td>
-                            </tr>
-                        `;
-                    }).join('');
+            const employeesInternal = notesWithNames.filter(e => !e.is_external);
+            const employeesExternal = notesWithNames.filter(e => e.is_external);
 
-                    const totalCost = totalLaborCost + totalVehicleCost;
 
-                    html += `
-                        <h2>${safeName} <span style="font-weight:normal; font-size:0.8em; color:#94a3b8">(${safeCode})</span></h2>
-                        
-                        <h3>Personalkosten</h3>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Mitarbeiter</th>
-                                    <th>Zeit</th>
-                                    <th class="text-right">Stunden</th>
-                                    <th class="text-right">Satz/h</th>
-                                    <th class="text-right">Kosten</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${laborRows || '<tr><td colspan="5" style="font-style:italic; text-align:center; color:#94a3b8;">Keine Personalzeiten erfasst</td></tr>'}
-                                <tr class="total-row">
-                                    <td colspan="2">Gesamt Personal</td>
-                                    <td class="text-right">${totalHours.toFixed(2)} h</td>
-                                    <td></td>
-                                    <td class="text-right">${totalLaborCost.toFixed(2)} €</td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        ${vehicleRows ? `
-                        <h3>Fahrzeugkosten / Sonstiges</h3>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Typ</th>
-                                    <th>Beschreibung</th>
-                                    <th></th>
-                                    <th></th>
-                                    <th class="text-right">Kosten</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${vehicleRows}
-                                <tr class="total-row">
-                                    <td colspan="4">Gesamt Fahrzeuge</td>
-                                    <td class="text-right">${totalVehicleCost.toFixed(2)} €</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        ` : ''}
-
-                        <div style="margin-top: 15px; text-align: right; font-size: 1.1em; font-weight: bold;">
-                            Projekt Gesamtkosten (vorl.): <span class="cost-positive">${totalCost.toFixed(2)} €</span>
-                        </div>
-                        <hr style="border: 0; border-top: 1px dashed #cbd5e1; margin: 20px 0;">
-                    `;
-                });
+            // CSS
+            const css = `
+            :root {
+                --color-bg: #f5f5f8;
+                --color-surface: #ffffff;
+                --color-border: #d2d6e0;
+                --color-border-strong: #a4a9b7;
+                --color-text: #222333;
+                --color-muted: #7a8090;
+                --color-primary: #1f6feb;
+                --color-primary-soft: #e4edff;
+                --color-accent: #f59f00;
+                --color-danger: #d64545;
+                --radius-card: 8px;
+                --shadow-soft: 0 2px 6px rgba(15, 23, 42, 0.08);
             }
 
-            html += `
-            </body>
-        </html>
-`;
+            * { box-sizing: border-box; }
+            html, body { margin: 0; padding: 0; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; color: var(--color-text); background-color: var(--color-bg); }
+            .page { max-width: 980px; margin: 16px auto; padding: 24px 28px 32px; background-color: var(--color-surface); border-radius: 10px; box-shadow: var(--shadow-soft); }
+            .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border); }
+            .header-left { display: flex; align-items: center; gap: 12px; }
+            .logo-placeholder { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--color-primary), #3b82f6); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: #fff; }
+            .header-title-block { display: flex; flex-direction: column; gap: 2px; }
+            .header-title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; }
+            .header-subtitle { font-size: 11px; color: var(--color-muted); }
+            .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+            .chip-date { padding: 4px 10px; border-radius: 999px; font-size: 11px; background-color: var(--color-primary-soft); color: var(--color-primary); font-weight: 600; }
+            .chip-tagline { font-size: 10px; color: var(--color-muted); }
+            .section { margin-top: 18px; }
+            .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+            .section-title { font-size: 14px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: #111827; }
+            .section-caption { font-size: 10px; color: var(--color-muted); }
+            .section-divider { border-top: 1px solid var(--color-border); margin: 10px 0 14px; }
+            .table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 6px; }
+            .table th, .table td { border: 1px solid var(--color-border-strong); padding: 4px 6px; vertical-align: top; word-wrap: break-word; }
+            .table th { background-color: #f3f4f8; font-weight: 600; font-size: 11px; }
+            .table td { font-size: 11px; }
+            .table--compact td { padding: 3px 5px; }
+            .text-muted { color: var(--color-muted); font-size: 10px; }
+            .text-right { text-align: right; }
+            .vehicles-note { font-size: 10px; color: var(--color-muted); margin-bottom: 4px; }
+            .cards-grid { display: flex; flex-direction: column; gap: 10px; }
+            .card { border-radius: var(--radius-card); border: 1px solid var(--color-border); background-color: #fcfcff; padding: 10px 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06); page-break-inside: avoid; }
+            .card-header-row { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+            .card-title-block { max-width: 70%; }
+            .card-title { font-size: 13px; font-weight: 600; }
+            .card-subtitle { font-size: 11px; color: var(--color-muted); margin-top: 1px; }
+            .card-tag { display: none; }
+            .card-body { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr); gap: 12px; margin-top: 6px; }
+            .card-contact-block { font-size: 11px; }
+            .card-contact-block .line { margin-bottom: 2px; }
+            .card-contact-block .label { font-weight: 600; }
+            .card-notes-label { font-size: 10px; font-weight: 600; margin-top: 6px; margin-bottom: 1px; }
+            .card-notes { font-size: 11px; white-space: pre-wrap; padding: 4px 6px; border-radius: 4px; background-color: #f9fafb; border: 1px dashed var(--color-border); }
+            .card-meta-right { display: flex; flex-direction: column; gap: 8px; }
+            .info-pills { display: flex; flex-direction: column; gap: 4px; }
+            .pill-row { display: flex; gap: 6px; }
+            .pill-box { flex: 1; border-radius: 6px; border: 1px solid var(--color-border); background-color: #ffffff; padding: 4px 6px; }
+            .pill-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 1px; }
+            .pill-value { font-size: 12px; font-weight: 500; }
+            .badge-service-type { display: inline-block; margin-top: 4px; padding: 2px 6px; border-radius: 999px; background-color: #fff7e6; color: #92400e; font-size: 10px; }
+            .card-team-title { font-size: 10px; font-weight: 600; margin: 6px 0 3px; }
+            .team-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            .team-table th, .team-table td { border: 1px solid var(--color-border); padding: 3px 4px; font-size: 10px; }
+            .team-table th { background-color: #eef2ff; font-weight: 600; }
+            .employees-container { display: flex; gap: 12px; margin-top: 10px; }
+            .employees-section { flex: 1; }
+            .employees-title { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+            .footer { margin-top: 20px; font-size: 10px; color: var(--color-muted); text-align: right; border-top: 1px solid var(--color-border); padding-top: 6px; }
+            @media print { body { background-color: #ffffff; } .page { margin: 0; border-radius: 0; box-shadow: none; page-break-after: always; } .card { page-break-inside: avoid; } .header { margin-top: 4px; } }
+            `;
+
+            // HTML Construction
+
+            // Vehicles
+            let vehiclesHtml = `
+            <div class="section">
+                <div class="section-header">
+                <div class="section-title">Fahrzeuge</div>
+                <div class="section-caption">Status und kurze Hinweise zum Einsatztag</div>
+                </div>
+                <div class="vehicles-note">Hinweis: Änderungen im Tagesverlauf bitte handschriftlich ergänzen.</div>
+                <table class="table table--compact">
+                <thead><tr><th style="width: 22%;">Fahrzeug</th><th style="width: 18%;">Status</th><th>Informationen</th></tr></thead>
+                <tbody>
+            `;
+            if (vehicleRows.length > 0) {
+                vehicleRows.forEach(v => {
+                    vehiclesHtml += `<tr><td>${escapeHtml(v.vehicle_name)}</td><td>${escapeHtml(v.status)}</td><td>${escapeHtml(v.informationen)}</td></tr>`;
+                });
+            } else {
+                vehiclesHtml += `<tr><td colspan="3" class="text-muted">(keine Fahrzeugdaten)</td></tr>`;
+            }
+            vehiclesHtml += `</tbody></table></div>`;
+
+            // Cards
+            let cardsHtml = `
+            <div class="section">
+                <div class="section-header"><div class="section-title">Einsätze</div><div class="section-caption">Touren, Kundendaten und Teamzuordnung</div></div>
+                <div class="cards-grid">
+            `;
+
+            if (cards.length > 0) {
+                cards.forEach(card => {
+                    const nameLine = [card.anrede, card.name].filter(Boolean).join(' ');
+                    const service = card.service_type || '';
+                    const headerLine = (nameLine || service) ?
+                        `${nameLine}${nameLine && service ? ' – ' + service : service}` : 'Einsatz';
+
+                    const serviceBadge = service ? `<span class="badge-service-type">${escapeHtml(service)}</span>` : '';
+
+                    const addrLines = [
+                        [card.anrede, card.name].filter(Boolean).join(' '),
+                        [card.strasse, card.nr].filter(Boolean).join(' '),
+                        [card.plz, card.ort].filter(Boolean).join(' ')
+                    ].filter(l => l.trim().length > 0);
+
+                    const contactHtml = `
+                        <div class="card-contact-block">
+                            ${addrLines.map(l => `<div class="line">${escapeHtml(l)}</div>`).join('')}
+                            <div class="line"><span class="label">Telefon:</span> ${escapeHtml(card.telefon)}</div>
+                            ${serviceBadge}
+                        </div>
+                    `;
+
+                    const notesHtml = `
+                        <div class="card-notes-label">Notizen / Besonderheiten vor Ort:</div>
+                        <div class="card-notes">${escapeHtml(card.notes)}</div>
+                    `;
+
+                    const timeVehicleHtml = `
+                        <div class="card-meta-right">
+                            <div class="info-pills">
+                                <div class="pill-row">
+                                    <div class="pill-box"><div class="pill-label">Startzeit</div><div class="pill-value">${escapeHtml(card.start_time?.substring(0, 5))}</div></div>
+                                    <div class="pill-box"><div class="pill-label">Fahrzeug</div><div class="pill-value">${escapeHtml(card.vehicle_name)}</div></div>
+                                </div>
+                                <div class="pill-row">
+                                    <div class="pill-box"><div class="pill-label">Angebotsart</div><div class="pill-value">${escapeHtml(card.offer_type)}</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    let teamHtml = `
+                        <div class="card-team-title">Team</div>
+                        <table class="team-table">
+                            <thead><tr><th style="width: 40%;">Mitarbeiter</th><th style="width: 20%;">Start</th><th>Notizen</th></tr></thead>
+                            <tbody>
+                    `;
+                    if (card.teamMembers.length > 0) {
+                        card.teamMembers.forEach((m: any) => {
+                            teamHtml += `<tr><td>${escapeHtml(m.employee_name)}</td><td>${escapeHtml(m.individual_start_time?.substring(0, 5))}</td><td>${escapeHtml(m.member_notes)}</td></tr>`;
+                        });
+                    } else {
+                        teamHtml += `<tr><td colspan="3" class="text-muted">(keine Teamzuordnung)</td></tr>`;
+                    }
+                    teamHtml += `</tbody></table>`;
+
+                    cardsHtml += `
+                        <div class="card">
+                            <div class="card-header-row">
+                                <div class="card-title-block">
+                                    <div class="card-title">${escapeHtml(headerLine)}</div>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div>${contactHtml}${notesHtml}</div>
+                                ${timeVehicleHtml}
+                            </div>
+                            ${teamHtml}
+                        </div>
+                    `;
+                });
+            } else {
+                cardsHtml += `<p class="text-muted">Keine Einsätze für diesen Tag vorhanden.</p>`;
+            }
+            cardsHtml += `</div></div>`;
+
+            // Employees
+            const buildEmployeesBlock = (rows: any[], emptyLabel: string) => {
+                const filtered = rows.filter(r => r.notizen && r.notizen.trim() !== '');
+                let h = `<div class="employees-section"><table class="table table--compact"><thead><tr><th style="width: 35%;">Name</th><th>Notizen / Verfügbarkeit</th></tr></thead><tbody>`;
+                if (filtered.length > 0) {
+                    filtered.forEach(emp => {
+                        h += `<tr><td>${escapeHtml(emp.name)}</td><td>${escapeHtml(emp.notizen)}</td></tr>`;
+                    });
+                } else {
+                    h += `<tr><td colspan="2" class="text-muted">${escapeHtml(emptyLabel)}</td></tr>`;
+                }
+                h += `</tbody></table></div>`;
+                return h;
+            };
+
+            const employeesInternalHtml = buildEmployeesBlock(employeesInternal, '(keine internen Mitarbeiter)');
+            const employeesExternalHtml = buildEmployeesBlock(employeesExternal, '(keine externen Mitarbeiter)');
+
+            // Full HTML
+            const html = `
+            <!DOCTYPE html>
+            <html lang="de">
+            <head><meta charset="UTF-8"><title>MorningPlan ${format(new Date(date), 'dd.MM.yyyy')}</title>
+            <style>${css}</style></head>
+            <body>
+            <div class="page">
+                <div class="header">
+                    <div class="header-left">
+                        <div class="logo-placeholder">LiS</div>
+                        <div class="header-title-block"><div class="header-title">MorningPlan</div><div class="header-subtitle">Tagesübersicht · Einsätze, Fahrzeuge & Team</div></div>
+                    </div>
+                    <div class="header-right">
+                        <div class="chip-date">Tag: ${format(new Date(date), 'dd.MM.yyyy')}</div>
+                        <div class="chip-tagline">Bereit für die Einsatzbesprechung am Morgen</div>
+                    </div>
+                </div>
+                ${vehiclesHtml}
+                <div class="section-divider"></div>
+                ${cardsHtml}
+                <div class="section-divider"></div>
+                <div class="employees-container">
+                    ${employeesInternalHtml}
+                    ${employeesExternalHtml}
+                </div>
+                <div class="footer">Erstellt am: ${new Date().toLocaleString('de-DE')} · Land in Sicht GmbH</div>
+            </div>
+            </body></html>
+            `;
 
             // Download
             const blob = new Blob([html], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Nachkalkulation_${date}.html`;
+            a.download = `MorningPlan_${date}.html`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            toast(`Export erfolgreich: Nachkalkulation_${date}.html heruntergeladen.`, 'success');
+            toast(`MorningPlan exportiert: MorningPlan_${date}.html`, 'success');
             setOpen(false);
         } catch (error) {
             console.error(error);
-            toast("Fehler beim Export: Daten konnten nicht geladen werden.", 'error');
+            toast("Fehler beim Export.", 'error');
         }
         setLoading(false);
     };
