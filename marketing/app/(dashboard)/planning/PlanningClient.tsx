@@ -29,6 +29,7 @@ import { ProjectCard } from './components/ProjectCard';
 import { VehicleList } from './components/VehicleList';
 import { EmployeeNotes } from './components/EmployeeNotes';
 import { TimelineView } from './components/TimelineView';
+import { PlanningExport } from './components/PlanningExport';
 
 const SERVICE_TYPES = ['Umzug', 'Entrümpelung', 'Transport', 'Einlagerung', 'Malerarbeiten', 'Kartonlieferung', 'Sonstiges'];
 
@@ -75,7 +76,10 @@ export function PlanningClient() {
 
         const [projRes, planRes, empRes, vehRes] = await Promise.all([
             supabase.from('t_projects').select('*').order('created_at', { ascending: false }).limit(100),
-            supabase.from('t_morningplan').select('*, project:t_projects(*)').gte('plan_date', startDateStr).lte('plan_date', endDateStr),
+            supabase.from('t_morningplan')
+                .select('*, project:t_projects(*), staff:t_morningplan_staff(*, employee:t_employees(*))')
+                .gte('plan_date', startDateStr)
+                .lte('plan_date', endDateStr),
             supabase.from('t_employees').select('*').eq('is_active', true).order('name'),
             supabase.from('t_vehicles').select('*').eq('is_deleted', false).order('nickname'),
         ]);
@@ -85,21 +89,7 @@ export function PlanningClient() {
         setVehicles(vehRes.data || []);
 
         const plansRaw = (planRes.data || []) as MorningPlan[];
-        if (plansRaw.length > 0) {
-            const planIds = plansRaw.map(p => p.plan_id);
-            const { data: staffData } = await supabase
-                .from('t_morningplan_staff')
-                .select('*, employee:t_employees(*)')
-                .in('plan_id', planIds);
-
-            const staffByPlan: Record<string, StaffRowType[]> = {};
-            (staffData as any || []).forEach((s: StaffRowType) => {
-                if (!staffByPlan[s.plan_id!]) staffByPlan[s.plan_id!] = [];
-                staffByPlan[s.plan_id!].push(s);
-            });
-            plansRaw.forEach(p => { p.staff = staffByPlan[p.plan_id] || []; });
-        }
-
+        // No manual staff mapping needed anymore as it is fetched nested
         setPlans(plansRaw);
         setLoading(false);
     }, [weekStart, weekEnd]);
@@ -600,6 +590,9 @@ export function PlanningClient() {
                             <button onClick={loadTemplates} title="Vorlage laden" className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600">
                                 <FolderOpen className="h-4 w-4" />
                             </button>
+                        </div>
+                        <div className="mr-2">
+                            <PlanningExport />
                         </div>
                         <button onClick={() => openCreatePlan(selectedDay)}
                             className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 shadow-sm">
