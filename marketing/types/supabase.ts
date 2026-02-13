@@ -127,6 +127,7 @@ export interface Database {
                     notes: string | null
                     angebotsart: string | null
                     vehicle_names: string | null
+                    sort_order: number | null
                     created_at: string | null
                     updated_at: string | null
                 }
@@ -140,6 +141,7 @@ export interface Database {
                     notes?: string | null
                     angebotsart?: string | null
                     vehicle_names?: string | null
+                    sort_order?: number | null
                 }
                 Update: {
                     plan_id?: string
@@ -151,6 +153,7 @@ export interface Database {
                     notes?: string | null
                     angebotsart?: string | null
                     vehicle_names?: string | null
+                    sort_order?: number | null
                 }
             }
             t_morningplan_staff: {
