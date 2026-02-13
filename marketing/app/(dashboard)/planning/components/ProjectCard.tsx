@@ -157,7 +157,7 @@ export function ProjectCard({
                                         planStaff={plan.staff || []}
                                         onUpdate={onUpdateStaff}
                                         onRemove={onRemoveStaff}
-                                        isConflicted={conflicts.employees.has(staff.employee_id)}
+                                        isConflicted={staff.employee_id ? conflicts.employees.has(staff.employee_id) : false}
                                     />
                                 ))}
                             </SortableContext>
