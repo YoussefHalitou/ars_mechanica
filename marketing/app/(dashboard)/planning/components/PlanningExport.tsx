@@ -22,13 +22,15 @@ export function PlanningExport() {
             ] = await Promise.all([
                 supabase.from('t_morningplan')
                     .select('*, project:t_projects(*), staff:t_morningplan_staff(*, employee:t_employees(*))')
-                    .eq('plan_date', date),
+                    .eq('plan_date', date)
+                    .order('sort_order', { ascending: true }),
                 supabase.from('t_vehicle_daily_status')
                     .select('*')
                     .eq('plan_date', date),
                 supabase.from('t_employee_daily_notes')
                     .select('*')
-                    .eq('plan_date', date),
+                    .eq('plan_date', date)
+                    .order('sort_order', { ascending: true }),
                 supabase.from('t_employees').select('*')
             ]);
 
@@ -59,11 +61,13 @@ export function PlanningExport() {
                 const proj = p.project || {};
 
                 // Map staff
-                const teamMembers = (p.staff || []).map((s: any) => ({
-                    employee_name: s.employee?.name || 'Unbekannt',
-                    individual_start_time: s.individual_start_time,
-                    member_notes: s.member_notes
-                }));
+                const teamMembers = (p.staff || [])
+                    .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+                    .map((s: any) => ({
+                        employee_name: s.employee?.name || 'Unbekannt',
+                        individual_start_time: s.individual_start_time,
+                        member_notes: s.member_notes
+                    }));
 
                 return {
                     anrede: proj.anrede,
