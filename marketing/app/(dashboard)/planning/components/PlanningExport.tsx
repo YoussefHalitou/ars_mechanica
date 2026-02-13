@@ -9,14 +9,8 @@ export function PlanningExport() {
     const [open, setOpen] = useState(false);
     const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [loading, setLoading] = useState(false);
-    const [mode, setMode] = useState<'morning' | 'calc'>('morning');
 
     const handleExport = async () => {
-        if (mode === 'morning') await handleExportMorningPlan();
-        else await handleExportNachkalkulation();
-    };
-
-    const handleExportMorningPlan = async () => {
         setLoading(true);
         try {
             // 1. Fetch Data
@@ -56,10 +50,7 @@ export function PlanningExport() {
             // Prepare Data
 
             // Vehicles
-            // Map statuses to a list. If we want all vehicles we might need to fetch t_vehicles too, 
-            // but the retool snippet implies it only shows those with status/info.
             const vehicleRows = (vehicleStatuses || []).filter(v => v.status || v.informationen);
-
 
             // Sort Functions (Matching PlanningClient logic)
             const sortPlans = (a: any, b: any) => {
@@ -81,8 +72,6 @@ export function PlanningExport() {
             const sortedPlans = (plans || []).sort(sortPlans);
 
             const cards = sortedPlans.map(p => {
-                // Determine project name/address from joined project or plan fallback? 
-                // schema: p.project is the joined object.
                 const proj = p.project || {};
 
                 // Map staff
@@ -103,9 +92,9 @@ export function PlanningExport() {
                     ort: proj.ort,
                     telefon: proj.telefon,
                     service_type: p.service_type || proj.dienstleistungen,
-                    notes: p.notes || proj.notes, // Plan notes priority?
+                    notes: p.notes || proj.notes,
                     start_time: p.start_time,
-                    vehicle_name: p.vehicle_names, // or lookup vehicle_id?
+                    vehicle_name: p.vehicle_names,
                     offer_type: p.angebotsart || proj.offer_type,
                     plan_date: p.plan_date,
                     teamMembers
@@ -113,13 +102,10 @@ export function PlanningExport() {
             });
 
             // Employees
-            // Join notes with employee names
             const notesWithNames = (employeeNotes || [])
                 .sort(sortNotes)
                 .map(n => {
                     let name = '';
-                    // Try to find employee by ID if available (schema check needed) or code
-                    // t_employee_daily_notes has employee_id and employee_code
                     if (n.employee_id && employeeMap.has(n.employee_id)) {
                         name = employeeMap.get(n.employee_id)!.name;
                     } else if (n.employee_code) {
@@ -131,7 +117,7 @@ export function PlanningExport() {
                     return {
                         name,
                         notizen: n.notizen,
-                        is_external: empObj?.contract_type === 'Freelancer' || empObj?.role === 'Subunternehmer' // Simple heuristic
+                        is_external: empObj?.contract_type === 'Freelancer' || empObj?.role === 'Subunternehmer'
                     };
                 });
 
@@ -379,240 +365,6 @@ export function PlanningExport() {
         setLoading(false);
     };
 
-    const handleExportNachkalkulation = async () => {
-        setLoading(true);
-        try {
-            // Fetch Plans to get Active Projects on this day
-            const { data: plans } = await supabase.from('t_morningplan').select('project_id, project_name').eq('plan_date', date);
-            const projectIds = Array.from(new Set(plans?.map(p => p.project_id).filter(Boolean) as string[]));
-
-            if (projectIds.length === 0) {
-                toast("Keine Projekte für dieses Datum gefunden.", "info");
-                setLoading(false);
-                return;
-            }
-
-            // Fetch ALL data for these projects
-            const [
-                { data: projects },
-                { data: timePairs },
-                { data: employees },
-                { data: vehicleCosts },
-                { data: materialUsage },
-                { data: materials },
-                { data: extraCosts },
-                { data: revenueItems },
-                { data: inspections }
-            ] = await Promise.all([
-                supabase.from('t_projects').select('*').in('project_id', projectIds),
-                supabase.from('t_time_pairs').select('*').in('project_id', projectIds),
-                supabase.from('t_employees').select('*'),
-                supabase.from('t_project_vehicle_costs').select('*').in('project_id', projectIds),
-                supabase.from('t_project_material_usage').select('*').in('project_id', projectIds),
-                supabase.from('t_materials').select('*'),
-                supabase.from('t_project_costs_extra').select('*').in('project_id', projectIds), // Ensure this matches schema table name if diff
-                supabase.from('t_project_revenue_items').select('*').in('project_id', projectIds),
-                // inspection calculation items? Using same table? Or different?
-                // Assuming revenue items table covers both. If inspection comes from elsewhere, need adjust. 
-                // Schema check: t_project_revenue_items has 'kind'.
-                Promise.resolve({ data: [] }) // Placeholder if no inspection specific table
-            ]);
-
-            const employeeMap = new Map(employees?.map(e => [e.employee_id, e])); // Access by ID
-            const employeeByNameMap = new Map(employees?.map(e => [e.name, e]));   // Access by Name
-
-            const materialMap = new Map(materials?.map(m => [m.material_id, m]));
-
-            const fmtEuro = (val: any) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(Number(val) || 0);
-
-            // Generate HTML for EACH project and concat
-            let allProjectsHtml = '';
-
-            projects?.forEach(project => {
-                const pid = project.project_id;
-
-                // Data Filter
-                const pTimePairs = (timePairs || []).filter(tp => tp.project_id === pid);
-                const pVehicleCosts = (vehicleCosts || []).filter(vc => vc.project_id === pid);
-                const pMaterialUse = (materialUsage || []).filter(mu => mu.project_id === pid);
-                const pExtraCosts = (extraCosts || []).filter(ec => ec.project_id === pid); // Check schem: project_id might be nullable
-                const pRevenueItems = (revenueItems || []).filter(ri => ri.project_id === pid);
-
-                // Calculations
-                let personalTotal = 0;
-                const personalRows = pTimePairs.map(tp => {
-                    const lis_stunden = tp.ges_lis_h || 0;
-                    const kunde_stunden = tp.ges_kd_h || 0;
-
-                    // Find employee rate
-                    let rate = 0;
-                    if (tp.employee_id && employeeMap.has(tp.employee_id)) rate = employeeMap.get(tp.employee_id)!.hourly_rate || 0;
-                    else if (tp.mitarbeiter && employeeByNameMap.has(tp.mitarbeiter)) rate = employeeByNameMap.get(tp.mitarbeiter)!.hourly_rate || 0;
-
-                    const kosten = lis_stunden * rate;
-                    personalTotal += kosten;
-
-                    return `<tr>
-                        <td style="padding:2px 8px;">${tp.mitarbeiter || ''}</td>
-                        <td style="padding:2px 8px;">${tp.kunde_von || ''}</td>
-                        <td style="padding:2px 8px;">${tp.kunde_bis || ''}</td>
-                        <td style="padding:2px 8px;">${tp.lis_von || ''}</td>
-                        <td style="padding:2px 8px;">${tp.lis_bis || ''}</td>
-                        <td style="padding:2px 8px;">${Number(lis_stunden).toFixed(2)}</td>
-                        <td style="padding:2px 8px;">${Number(kunde_stunden).toFixed(2)}</td>
-                        <td style="padding:2px 8px;">${fmtEuro(kosten)}</td>
-                    </tr>`;
-                }).join('');
-
-                let vehicleTotal = 0;
-                const vehicleRows = pVehicleCosts.map(vc => {
-                    const cost = vc.total_cost || 0;
-                    vehicleTotal += cost;
-                    return `<tr>
-                        <td style="padding:2px 8px;">${vc.usage_type || ''}</td>
-                        <td style="padding:2px 8px;">${vc.usage_value || ''}</td>
-                        <td style="padding:2px 8px;">${fmtEuro(vc.cost_per_unit)}</td>
-                        <td style="padding:2px 8px;">${fmtEuro(cost)}</td>
-                        <td style="padding:2px 8px;">${vc.notes || ''}</td>
-                    </tr>`;
-                }).join('');
-
-                let materialTotalEK = 0;
-                // let materialTotalVK = 0;
-                const materialRows = pMaterialUse.map(mu => {
-                    // We need cost_per_unit from material table? Or stored in usage?
-                    // Usage table has project_id, material_id, quantity. 
-                    // Need to join t_material_prices? Or assume t_materials has default cost?
-                    // t_materials doesn't have cost. t_material_prices has.
-                    // Simplified: assume 0 cost if not fetched. Or fetch prices.
-                    // For now, let's just list quantity. Real Calc needs prices.
-                    // Let's assume 0 for now as prices table is complex join.
-                    const cost = 0;
-                    const price = 0;
-                    return `<tr>
-                        <td style="padding:2px 8px;">${materialMap.get(mu.material_id)?.name || mu.material_id}</td>
-                        <td style="padding:2px 8px;">${mu.quantity}</td>
-                        <td style="padding:2px 8px;">-</td>
-                        <td style="padding:2px 8px;">-</td>
-                        <td style="padding:2px 8px;">-</td>
-                        <td style="padding:2px 8px;">-</td>
-                    </tr>`;
-                }).join('');
-
-                let serviceTotal = 0;
-                const serviceRows = pExtraCosts.map(ec => {
-                    const cost = ec.cost || 0;
-                    serviceTotal += cost;
-                    return `<tr><td style="padding:2px 8px;">${(ec as any).description || (ec as any).cost_type}</td><td style="padding:2px 8px;">${fmtEuro(cost)}</td></tr>`;
-                }).join('');
-
-                let revenueTotal = 0;
-                const revenueRows = pRevenueItems.map(ri => {
-                    const total = ri.line_total || 0;
-                    revenueTotal += total;
-                    return `<tr>
-                    <td style="padding:2px 8px;">${ri.position_label}</td>
-                    <td style="padding:2px 8px;">${ri.qty}</td>
-                    <td style="padding:2px 8px;">${ri.unit}</td>
-                    <td style="padding:2px 8px;">${fmtEuro(ri.unit_price)}</td>
-                    <td style="padding:2px 8px;">${fmtEuro(total)}</td>
-                   </tr>`;
-                }).join('');
-
-                const totalCosts = personalTotal + vehicleTotal + materialTotalEK + serviceTotal;
-                const marginEuro = revenueTotal - totalCosts;
-                const marginPct = revenueTotal > 0 ? (marginEuro / revenueTotal) * 100 : 0;
-
-                const renderTable = (headers: string[], body: string) => `
-                <table style="border-collapse:collapse;width:100%;margin:8px 0;font-size:12px;">
-                    <thead><tr>${headers.map(h => `<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #ddd;">${h}</th>`).join('')}</tr></thead>
-                    <tbody>${body || '<tr><td colspan="' + headers.length + '" style="padding:8px;font-style:italic;">Keine Daten</td></tr>'}</tbody>
-                </table>`;
-
-                allProjectsHtml += `
-                <div style="page-break-after: always; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px dashed #ccc;">
-                    <h1>Nachkalkulation: ${project.project_code || ''}</h1>
-                    <p><strong>Projekt:</strong> ${project.name}<br/>
-                       <strong>Adresse:</strong> ${[project.strasse, project.nr].filter(Boolean).join(' ')}, ${project.plz} ${project.ort}</p>
-
-                    <div class="kpi-row">
-                        <div class="kpi"><div class="kpi-label">Gesamtkosten</div><div class="kpi-value">${fmtEuro(totalCosts)}</div></div>
-                        <div class="kpi"><div class="kpi-label">Gesamterlöse</div><div class="kpi-value">${fmtEuro(revenueTotal)}</div></div>
-                        <div class="kpi"><div class="kpi-label">Marge (EUR)</div><div class="kpi-value">${fmtEuro(marginEuro)}</div></div>
-                        <div class="kpi"><div class="kpi-label">Marge (%)</div><div class="kpi-value">${marginPct.toFixed(1)} %</div></div>
-                    </div>
-
-                    <div class="section">
-                        <h2>1. Personal</h2>
-                        ${renderTable(['Mitarbeiter', 'Kunde Von', 'Bis', 'LiS Von', 'Bis', 'LiS Std', 'Kd Std', 'Kosten'], personalRows)}
-                        <p><strong>Summe Personal:</strong> ${fmtEuro(personalTotal)}</p>
-                    </div>
-
-                    <div class="section">
-                        <h2>2. Fahrzeuge</h2>
-                        ${renderTable(['Typ', 'Menge', 'Kosten/Einh', 'Gesamt', 'Notiz'], vehicleRows)}
-                        <p><strong>Summe Fahrzeuge:</strong> ${fmtEuro(vehicleTotal)}</p>
-                    </div>
-
-                    <div class="section">
-                        <h2>3. Material (Details unvollständig)</h2>
-                        ${renderTable(['Material', 'Menge', 'EK', 'VK', 'Sum EK', 'Sum VK'], materialRows)}
-                    </div>
-
-                    <div class="section">
-                        <h2>4. Zusatzkosten</h2>
-                        ${renderTable(['Beschreibung', 'Kosten'], serviceRows)}
-                        <p><strong>Summe Zusatz:</strong> ${fmtEuro(serviceTotal)}</p>
-                    </div>
-
-                    <div class="section">
-                        <h2>5. Erlöse</h2>
-                        ${renderTable(['Position', 'Menge', 'Einh', 'EP', 'Gesamt'], revenueRows)}
-                        <p><strong>Summe Erlöse:</strong> ${fmtEuro(revenueTotal)}</p>
-                    </div>
-                </div>
-                `;
-            });
-
-            // Wrap
-            const fullHtml = `
-            <!DOCTYPE html>
-            <html lang="de">
-            <head>
-            <meta charset="UTF-8" />
-            <title>Nachkalkulationen ${format(new Date(date), 'dd.MM.yyyy')}</title>
-            <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #111827; padding: 20px; max-width: 900px; margin: 0 auto; }
-                h1 { font-size: 20px; margin-bottom: 4px; color: #1f2937; }
-                h2 { font-size: 16px; margin-top: 16px; margin-bottom: 4px; border-bottom: 1px solid #e5e7eb; padding-bottom: 2px; color: #374151; }
-                .section { margin-top: 16px; }
-                .kpi-row { display:flex; gap:16px; margin-top:12px; margin-bottom: 20px; }
-                .kpi { padding:8px 12px; border-radius:8px; background:#f9fafb; border:1px solid #e5e7eb; min-width: 120px; }
-                .kpi-label { font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:#6b7280; margin-bottom: 2px; }
-                .kpi-value { font-size:16px; font-weight:700; color: #111827; }
-            </style>
-            </head>
-            <body>
-                <div style="margin-bottom: 30px; text-align: center; border-bottom: 1px solid #eee; padding-bottom: 20px;">
-                    <h1 style="font-size: 24px;">Sammel-Nachkalkulation</h1>
-                    <p style="color: #666;">Projekte vom ${format(new Date(date), 'dd.MM.yyyy')}</p>
-                </div>
-                ${allProjectsHtml}
-            </body>
-            </html>
-            `;
-
-            downloadHtml(fullHtml, `Nachkalkulation_Sammel_${date}.html`);
-            toast(`Nachkalkulation exportiert`, 'success');
-            setOpen(false);
-
-        } catch (error) {
-            console.error(error);
-            toast("Fehler beim Export.", "error");
-        }
-        setLoading(false);
-    };
-
     const downloadHtml = (html: string, filename: string) => {
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
@@ -646,21 +398,6 @@ export function PlanningExport() {
                         </div>
 
                         <div className="p-5 space-y-4">
-                            <div className="flex bg-slate-100 p-1 rounded-lg">
-                                <button
-                                    onClick={() => setMode('morning')}
-                                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${mode === 'morning' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                                >
-                                    MorningPlan
-                                </button>
-                                <button
-                                    onClick={() => setMode('calc')}
-                                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${mode === 'calc' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                                >
-                                    Nachkalkulation
-                                </button>
-                            </div>
-
                             <div className="space-y-1.5">
                                 <label className="block text-xs font-medium text-slate-500">Datum wählen</label>
                                 <div className="relative">
@@ -673,16 +410,12 @@ export function PlanningExport() {
                                     <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
                                 </div>
                             </div>
-
-                            {mode === 'calc' && (
-                                <p className="text-xs text-slate-500 bg-blue-50 p-2 rounded border border-blue-100">
-                                    Exportiert eine Sammel-Nachkalkulation für alle Projekte, die an diesem Datum eingeplant sind.
-                                </p>
-                            )}
                         </div>
 
                         <div className="flex justify-end gap-2 bg-slate-50 px-4 py-3 border-t">
                             <button
+                                onClick={() => setOpen(false)}
+                                className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
                             >
                                 Abbrechen
                             </button>

@@ -1,0 +1,30 @@
+# Demo client configuration for LIS White-Label System
+# This file defines the branding and feature set for the demo tenant
+
+name: "LIS Demo System"
+logo_url: "https://via.placeholder.com/200x100/2563eb/ffffff?text=LIS+Demo"
+primary_color: "#2563eb"
+
+# Modules enabled for this tenant
+# Each module corresponds to a folder in backend/modules/
+enabled_modules:
+  - services        # Leistungskatalog - Service catalog
+  - materials       # Materialkatalog - Materials catalog
+  - projects        # Projekte - Projects
+  - time_pairs      # Zeiterfassung - Time tracking
+  - revenue         # Einnahmen - Revenue
+  - vehicle_costs   # Fahrzeugkosten - Vehicle costs
+  - material_usage  # Materialverbrauch - Material usage
+  - employees       # Mitarbeiter - Employees
+  - users           # Benutzer - Users (Draftbit)
+  - inspections     # Besichtigungen - Inspections (Draftbit)
+  - abnahmen        # Abnahmen - Completions (Draftbit)
+  - morningplan     # Morgenplan - Morning Plan (Draftbit)
+  - analytics       # Analytik - Analytics (Draftbit)
+  - feedback        # Feedback - Feedback (Draftbit)
+
+# Additional menu items (optional)
+extra_menu: []
+
+# Tenant identifier (should match filename without .yaml)
+tenant_id: demo
