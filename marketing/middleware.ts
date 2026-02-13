@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 // Routes that require authentication
-const protectedPaths = ['/dashboard', '/mitarbeiter', '/projekte', '/zeiterfassung']
+const protectedPaths = ['/dashboard', '/mitarbeiter', '/projekte', '/zeiterfassung', '/planning']
 
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl
@@ -16,8 +16,7 @@ export function middleware(request: NextRequest) {
         return NextResponse.next()
     }
 
-    // Check for access token in cookies or localStorage isn't available in middleware,
-    // so we check a cookie that we'll set on login
+    // Check for access token in cookies
     const token = request.cookies.get('has_session')?.value
 
     if (!token) {
@@ -30,5 +29,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ['/dashboard/:path*', '/mitarbeiter/:path*', '/projekte/:path*', '/zeiterfassung/:path*'],
+    matcher: ['/dashboard/:path*', '/mitarbeiter/:path*', '/projekte/:path*', '/zeiterfassung/:path*', '/planning/:path*', '/'],
 }

@@ -2,186 +2,39 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/components/ui/toast';
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
 import { de } from 'date-fns/locale';
 import {
-    ChevronLeft, ChevronRight, Calendar as CalendarIcon, Users, Truck, Plus,
-    X, Save, Loader2, Clock, FileText, User, MessageSquare, Pencil, Trash2, ArrowLeft, MoreHorizontal
+    ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus,
+    X, Save, Loader2, ArrowLeft, FolderOpen, List, Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { Database } from '@/types/supabase';
 import {
-    DndContext, DragOverlay, useDraggable, useDroppable,
+    DndContext, DragOverlay,
     DragEndEvent, DragStartEvent, closestCorners
 } from '@dnd-kit/core';
 import {
     SortableContext,
     verticalListSortingStrategy,
-    useSortable,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
-type Project = Database['public']['Tables']['t_projects']['Row'];
-type Employee = Database['public']['Tables']['t_employees']['Row'];
-type Vehicle = Database['public']['Tables']['t_vehicles']['Row'];
-type MorningPlan = Database['public']['Tables']['t_morningplan']['Row'] & {
-    project?: Project;
-    staff?: StaffRow[];
-};
-type StaffRow = Database['public']['Tables']['t_morningplan_staff']['Row'] & { employee?: Employee };
-type VehicleDailyStatus = Database['public']['Tables']['t_vehicle_daily_status']['Row'];
-type EmployeeDailyNote = Database['public']['Tables']['t_employee_daily_notes']['Row'];
+// Types
+import { Project, Employee, Vehicle, MorningPlan, StaffRowType, VehicleDailyStatus, EmployeeDailyNote, PlanTemplate } from './components/types';
+
+// Components
+import { DraggableProject } from './components/DraggableProject';
+import { DroppableDay } from './components/DroppableDay';
+import { ProjectCard } from './components/ProjectCard';
+import { VehicleList } from './components/VehicleList';
+import { EmployeeNotes } from './components/EmployeeNotes';
+import { TimelineView } from './components/TimelineView';
 
 const SERVICE_TYPES = ['Umzug', 'Entrümpelung', 'Transport', 'Einlagerung', 'Malerarbeiten', 'Kartonlieferung', 'Sonstiges'];
 
-// ================ DRAGGABLE PROJECT ================
-function DraggableProject({ project }: { project: Project }) {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-        id: `project-${project.project_id}`,
-        data: { type: 'project', project },
-    });
-    return (
-        <div ref={setNodeRef} {...listeners} {...attributes}
-            className={cn("cursor-grab active:cursor-grabbing rounded-lg border border-slate-200 bg-white p-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all touch-none", isDragging && "opacity-50")}>
-            <div className="flex justify-between items-start mb-1">
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
-                    {project.project_date ? format(new Date(project.project_date), 'dd.MM.yy') : (project.project_code || 'NEU')}
-                </span>
-                <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded",
-                    project.status === 'Bestätigt' ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700")}>{project.status || 'Planung'}</span>
-            </div>
-            <h4 className="font-medium text-sm text-slate-800 truncate">{project.name}</h4>
-            {project.ort && <div className="text-[10px] text-slate-400 truncate">{project.plz} {project.ort}</div>}
-        </div>
-    );
-}
-
-// ================ DROPPABLE DAY ================
-function DroppableDay({ day, plans, onDelete, onEditPlan }: {
-    day: Date; plans: MorningPlan[]; onDelete: (id: string, e: React.MouseEvent) => void; onEditPlan: (plan: MorningPlan) => void;
-}) {
-    const dateStr = format(day, 'yyyy-MM-dd');
-    const { setNodeRef, isOver } = useDroppable({ id: `day-${dateStr}`, data: { date: dateStr } });
-    const isToday = isSameDay(day, new Date());
-
-    return (
-        <div ref={setNodeRef}
-            className={cn("flex flex-col h-full rounded-xl border shadow-sm overflow-hidden transition-colors group/day",
-                isOver ? "bg-blue-50 border-blue-400" : "bg-white border-slate-200")}>
-            <div className={cn("px-3 py-2 border-b flex flex-col items-center gap-0.5 relative", isToday ? "bg-blue-50/50" : "bg-white")}>
-                <span className="text-[10px] font-medium text-slate-400 uppercase">{format(day, 'EEE', { locale: de })}</span>
-                <span className={cn("text-base font-bold w-7 h-7 flex items-center justify-center rounded-full",
-                    isToday ? "bg-blue-600 text-white" : "text-slate-700")}>{format(day, 'd')}</span>
-            </div>
-            <div className="flex-1 p-1.5 bg-slate-50/30 space-y-1.5 overflow-y-auto">
-                {plans.map(plan => (
-                    <div key={plan.plan_id} className="relative rounded-md border border-slate-200 bg-white p-2 shadow-sm group hover:border-blue-200 transition-colors cursor-default" onClick={e => e.stopPropagation()}>
-                        <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-                            <button onClick={() => onEditPlan(plan)} className="text-slate-400 hover:text-blue-600 text-xs p-0.5"><Pencil className="h-3 w-3" /></button>
-                            <button onClick={(e) => onDelete(plan.plan_id, e)} type="button" className="text-slate-400 hover:text-red-500 text-xs p-0.5">×</button>
-                        </div>
-                        <div className="text-xs font-semibold text-blue-700 truncate mb-0.5">{plan.project?.name || 'Unbekannt'}</div>
-                        <div className="text-[10px] text-slate-500 flex items-center gap-2 mb-1">
-                            <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{plan.start_time?.substring(0, 5) || '07:00'}</span>
-                            {plan.vehicle_names && <span className="flex items-center gap-0.5"><Truck className="h-2.5 w-2.5" />{plan.vehicle_names}</span>}
-                        </div>
-                        {plan.service_type && <div className="text-[9px] text-slate-400 mb-0.5">{plan.service_type}</div>}
-                        <div className="flex items-center gap-1 flex-wrap">
-                            {(plan.staff || []).map(s => (
-                                <span key={s.id} className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full truncate max-w-[60px]">{s.employee?.name?.split(' ')[0] || '?'}</span>
-                            ))}
-
-                        </div>
-                    </div>
-                ))}
-                {plans.length === 0 && !isOver && (
-                    <div className="h-full min-h-[80px] border-2 border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-300 text-[10px]">Frei</div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// ================ SORTABLE STAFF ROW ================
-function SortableStaffRow({ staff, onUpdate, onRemove }: {
-    staff: StaffRow;
-    planStaff: StaffRow[];
-    onUpdate: (id: number, field: string, value: any) => void;
-    onRemove: (id: number) => void;
-}) {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging
-    } = useSortable({ id: `staff-${staff.id}` });
-
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
-    };
-
-    return (
-        <tr ref={setNodeRef} style={style} className={cn("group hover:bg-slate-50/80 transition-colors", isDragging && "opacity-50 relative z-20 bg-white")}>
-            <td className="px-5 py-2 font-medium text-slate-700">
-                <div className="flex items-center gap-2">
-                    <div {...listeners} {...attributes} className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 p-1">
-                        <MoreHorizontal className="h-3.5 w-3.5 rotate-90" />
-                    </div>
-                    <div>
-                        {staff.employee?.name}
-                        <div className="text-[10px] text-slate-400 font-normal">{staff.employee?.contract_type}</div>
-                    </div>
-                </div>
-            </td>
-            <td className="px-2 py-2">
-                <input
-                    type="time"
-                    className="w-full bg-transparent border border-transparent rounded px-1 py-0.5 hover:border-slate-300 focus:border-blue-400 focus:bg-white transition-all text-slate-600 font-mono"
-                    defaultValue={staff.individual_start_time?.substring(0, 5) || ''}
-                    onBlur={(e) => {
-                        if (e.target.value !== staff.individual_start_time?.substring(0, 5)) {
-                            onUpdate(staff.id, 'individual_start_time', e.target.value);
-                        }
-                    }}
-                />
-            </td>
-            <td className="px-2 py-2">
-                <input
-                    type="text"
-                    className="w-full bg-transparent border border-transparent rounded px-1 py-0.5 hover:border-slate-300 focus:border-blue-400 focus:bg-white transition-all text-slate-600 placeholder:text-slate-300"
-                    placeholder="Rolle/Notiz..."
-                    defaultValue={staff.member_notes || ''}
-                    onBlur={(e) => {
-                        if (e.target.value !== (staff.member_notes || '')) {
-                            onUpdate(staff.id, 'member_notes', e.target.value);
-                        }
-                    }}
-                />
-            </td>
-            <td className="px-2 py-2 text-right">
-                <button
-                    onClick={() => onRemove(staff.id)}
-                    className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
-                >
-                    <X className="h-3.5 w-3.5" />
-                </button>
-            </td>
-        </tr>
-    );
-}
-
-// ================ PREVIEW EXPORT FOR DAY VIEW ================
-// Same as previous export, but we keep it here if user wants PDF/HTML download
-// ... (omitted if not used directly, but we kept buttons)
-
-// ================ MAIN PAGE ================
-export default function PlanningPage() {
+export function PlanningClient() {
     const { toast } = useToast();
-    const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
+    const [viewMode, setViewMode] = useState<'week' | 'day' | 'timeline'>('week');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [projects, setProjects] = useState<Project[]>([]);
     const [plans, setPlans] = useState<MorningPlan[]>([]);
@@ -192,16 +45,17 @@ export default function PlanningPage() {
     const [activeDragItem, setActiveDragItem] = useState<Project | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedDay, setSelectedDay] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+    const [isCompact, setIsCompact] = useState(false);
 
     // Plan modal
     const [planModal, setPlanModal] = useState<{ mode: 'create' | 'edit'; plan?: MorningPlan; date: string } | null>(null);
     const [planForm, setPlanForm] = useState({ project_id: '', start_time: '07:00', vehicle_id: '', vehicle_names: '', service_type: '', notes: '' });
     const [savingPlan, setSavingPlan] = useState(false);
 
-    // Staff modal state REMOVED
-
-
-
+    // Templates
+    const [templates, setTemplates] = useState<PlanTemplate[]>([]);
+    const [templateModalOpen, setTemplateModalOpen] = useState(false);
+    const [loadingTemplates, setLoadingTemplates] = useState(false);
 
     // Sidebar State
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -238,8 +92,8 @@ export default function PlanningPage() {
                 .select('*, employee:t_employees(*)')
                 .in('plan_id', planIds);
 
-            const staffByPlan: Record<string, StaffRow[]> = {};
-            (staffData as any || []).forEach((s: StaffRow) => {
+            const staffByPlan: Record<string, StaffRowType[]> = {};
+            (staffData as any || []).forEach((s: StaffRowType) => {
                 if (!staffByPlan[s.plan_id!]) staffByPlan[s.plan_id!] = [];
                 staffByPlan[s.plan_id!].push(s);
             });
@@ -248,7 +102,7 @@ export default function PlanningPage() {
 
         setPlans(plansRaw);
         setLoading(false);
-    }, [weekStart, weekEnd]); // Removed currentDate, depends on weekStart
+    }, [weekStart, weekEnd]);
 
     const fetchDayPanels = useCallback(async () => {
         const [vdsRes, notesRes] = await Promise.all([
@@ -334,7 +188,6 @@ export default function PlanningPage() {
                     sort_order: idx + 1
                 }));
 
-                // Promise.all to update all affected staff positions
                 await Promise.all(updates.map(u =>
                     supabase.from('t_morningplan_staff').update({ sort_order: u.sort_order }).eq('id', u.id)
                 ));
@@ -342,6 +195,57 @@ export default function PlanningPage() {
             } catch {
                 toast('Fehler beim Sortieren', 'error');
                 fetchData(); // Rollback
+            }
+        }
+
+        // 3. PROJECT CARD REORDERING (within Day View)
+        if (active.id.toString().startsWith('plan-') && over.id.toString().startsWith('plan-')) {
+            const activeId = active.id.toString().replace('plan-', '');
+            const overId = over.id.toString().replace('plan-', '');
+
+            if (activeId === overId) return;
+
+            const dayPlansFiltered = plans.filter(p => p.plan_date === selectedDay);
+            const oldIndex = dayPlansFiltered.findIndex(p => p.plan_id === activeId);
+            const newIndex = dayPlansFiltered.findIndex(p => p.plan_id === overId);
+
+            const newDayPlans = [...dayPlansFiltered];
+            const [movedItem] = newDayPlans.splice(oldIndex, 1);
+            newDayPlans.splice(newIndex, 0, movedItem);
+
+            setPlans(prev => {
+                const otherPlans = prev.filter(p => p.plan_date !== selectedDay);
+                const reordered = newDayPlans.map((p, idx) => ({ ...p, sort_order: idx + 1 }));
+                return [...otherPlans, ...reordered];
+            });
+
+            try {
+                await Promise.all(newDayPlans.map((p, idx) =>
+                    supabase.from('t_morningplan').update({ sort_order: idx + 1 } as any).eq('plan_id', p.plan_id)
+                ));
+                toast('Reihenfolge der Einsätze gespeichert');
+            } catch {
+                toast('Fehler beim Sortieren', 'error');
+                fetchData();
+            }
+        }
+
+        // 4. PROJECT CARD TO DIFFERENT DAY (Move plan)
+        if (active.id.toString().startsWith('plan-') && over.id.toString().startsWith('day-')) {
+            const planId = active.id.toString().replace('plan-', '');
+            const newDate = over.id.toString().replace('day-', '');
+            const plan = plans.find(p => p.plan_id === planId);
+            if (!plan || plan.plan_date === newDate) return;
+
+            setPlans(prev => prev.map(p => p.plan_id === planId ? { ...p, plan_date: newDate } : p));
+
+            try {
+                const { error } = await supabase.from('t_morningplan').update({ plan_date: newDate }).eq('plan_id', planId);
+                if (error) throw error;
+                toast(`Verschoben auf ${format(new Date(newDate), 'dd.MM.')}`);
+            } catch {
+                toast('Fehler beim Verschieben', 'error');
+                fetchData();
             }
         }
     };
@@ -393,6 +297,153 @@ export default function PlanningPage() {
         if (error) toast('Fehler beim Löschen', 'error');
     };
 
+    const duplicatePlan = async (plan: MorningPlan) => {
+        setSavingPlan(true);
+        try {
+            const { data: newPlan, error } = await supabase.from('t_morningplan').insert({
+                plan_date: plan.plan_date,
+                project_id: plan.project_id,
+                start_time: plan.start_time,
+                vehicle_id: plan.vehicle_id,
+                vehicle_names: plan.vehicle_names,
+                service_type: plan.service_type,
+                notes: plan.notes,
+                sort_order: (plan as any).sort_order ? (plan as any).sort_order + 1 : 1
+            }).select().single();
+
+            if (error) throw error;
+
+            // Also duplicate staff
+            if (plan.staff && plan.staff.length > 0) {
+                const staffPayload = plan.staff.map(s => ({
+                    plan_id: newPlan.plan_id,
+                    employee_id: s.employee_id,
+                    individual_start_time: s.individual_start_time,
+                    member_notes: (s as any).member_notes,
+                    sort_order: s.sort_order
+                }));
+                await supabase.from('t_morningplan_staff').insert(staffPayload);
+            }
+
+            toast('Einsatz dupliziert');
+            fetchData();
+        } catch { toast('Fehler beim Duplizieren', 'error'); }
+        setSavingPlan(false);
+    };
+
+    const moveToTomorrow = async (plan: MorningPlan) => {
+        const tomorrow = format(addDays(new Date(plan.plan_date), 1), 'yyyy-MM-dd');
+        try {
+            const { error } = await supabase.from('t_morningplan').update({ plan_date: tomorrow }).eq('plan_id', plan.plan_id);
+            if (error) throw error;
+            toast(`Auf morgen (${format(new Date(tomorrow), 'dd.MM.')}) verschoben`);
+            fetchData();
+        } catch { toast('Fehler beim Verschieben', 'error'); }
+    };
+
+    // ---- TEMPLATES ----
+    const handleSaveTemplate = async () => {
+        const name = window.prompt('Name für Vorlage eingeben:');
+        if (!name) return;
+
+        setLoading(true);
+        try {
+            // 1. Create Template
+            const { data: template, error: tError } = await supabase.from('t_plan_templates').insert({ name }).select().single();
+            if (tError) throw tError;
+
+            // 2. Create Items
+            const items = dayPlans.map(p => ({
+                template_id: template.id,
+                project_id: p.project_id,
+                project_name: p.project?.name || 'Unbekanntes Projekt',
+                start_time: p.start_time,
+                vehicle_id: p.vehicle_id,
+                service_type: p.service_type,
+                notes: p.notes,
+                sort_order: p.sort_order
+            }));
+
+            if (items.length > 0) {
+                const { error: iError } = await supabase.from('t_plan_template_items').insert(items);
+                if (iError) throw iError;
+            }
+
+            toast('Vorlage gespeichert', 'success');
+        } catch (e: any) {
+            console.error(e);
+            toast('Fehler beim Speichern der Vorlage', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadTemplates = async () => {
+        setLoadingTemplates(true);
+        try {
+            const { data, error } = await supabase.from('t_plan_templates').select('*').order('created_at', { ascending: false });
+            if (error) throw error;
+            setTemplates(data || []);
+            setTemplateModalOpen(true);
+        } catch {
+            toast('Fehler beim Laden der Vorlagen', 'error');
+        } finally {
+            setLoadingTemplates(false);
+        }
+    };
+
+    const applyTemplate = async (templateId: string) => {
+        if (!window.confirm('Warnung: Dies fügt die Vorlage zum aktuellen Tag hinzu. Fortfahren?')) return;
+
+        setLoading(true);
+        setTemplateModalOpen(false);
+        try {
+            // 1. Get Items
+            const { data: items, error: iError } = await supabase.from('t_plan_template_items').select('*').eq('template_id', templateId);
+            if (iError) throw iError;
+
+            if (!items || items.length === 0) {
+                toast('Vorlage ist leer', 'info');
+                return;
+            }
+
+            // 2. Create Plans
+            const newPlans = items.map(item => ({
+                plan_date: selectedDay,
+                project_id: item.project_id,
+                start_time: item.start_time,
+                vehicle_id: item.vehicle_id,
+                service_type: item.service_type,
+                notes: item.notes,
+                sort_order: item.sort_order
+            }));
+
+            const { error: pError } = await supabase.from('t_morningplan').insert(newPlans);
+            if (pError) throw pError;
+
+            toast('Vorlage angewendet', 'success');
+            fetchData();
+        } catch (e) {
+            console.error(e);
+            toast('Fehler beim Anwenden', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const deleteTemplate = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (!window.confirm('Vorlage wirklich löschen?')) return;
+        try {
+            const { error } = await supabase.from('t_plan_templates').delete().eq('id', id);
+            if (error) throw error;
+            setTemplates(templates.filter(t => t.id !== id));
+            toast('Vorlage gelöscht');
+        } catch {
+            toast('Fehler beim Löschen', 'error');
+        }
+    };
+
     // ---- STAFF INLINE CRUD ----
     const addStaffToPlan = async (planId: string, employeeId: string) => {
         if (!employeeId) return;
@@ -405,7 +456,7 @@ export default function PlanningPage() {
                 plan_id: planId,
                 employee_id: employeeId,
                 sort_order: maxOrder + 1,
-                individual_start_time: null // defaults to plan start time usually, or null
+                individual_start_time: null
             });
             if (error) throw error;
             toast('Mitarbeiter hinzugefügt');
@@ -417,7 +468,7 @@ export default function PlanningPage() {
         try {
             const { error } = await supabase.from('t_morningplan_staff').update({ [field]: value }).eq('id', staffId);
             if (error) throw error;
-            fetchData(); // Refresh to ensure UI sync
+            fetchData();
         } catch { toast('Fehler beim Aktualisieren', 'error'); }
     };
 
@@ -446,10 +497,42 @@ export default function PlanningPage() {
         } catch { toast('Fehler beim Speichern', 'error'); }
     };
 
-
-
     // Day View: Plan for selected day
-    const dayPlans = plans.filter(p => p.plan_date === selectedDay).sort((a, b) => (a.start_time || '07:00').localeCompare(b.start_time || '07:00'));
+    const dayPlans = plans
+        .filter(p => p.plan_date === selectedDay)
+        .sort((a, b) => {
+            if ((a as any).sort_order !== (b as any).sort_order) {
+                return ((a as any).sort_order || 0) - ((b as any).sort_order || 0);
+            }
+            return (a.start_time || '07:00').localeCompare(b.start_time || '07:00');
+        });
+
+    // Conflict Detection
+    const conflicts = React.useMemo(() => {
+        const empMap: Record<string, string[]> = {}; // employee_id -> [plan_ids]
+        const vehMap: Record<string, string[]> = {}; // vehicle_id -> [plan_ids]
+
+        dayPlans.forEach(p => {
+            if (p.vehicle_id) {
+                if (!vehMap[p.vehicle_id]) vehMap[p.vehicle_id] = [];
+                vehMap[p.vehicle_id].push(p.plan_id);
+            }
+            p.staff?.forEach(s => {
+                if (s.employee_id) {
+                    if (!empMap[s.employee_id]) empMap[s.employee_id] = [];
+                    empMap[s.employee_id].push(p.plan_id);
+                }
+            });
+        });
+
+        const conflictingEmps = new Set<string>();
+        const conflictingVehs = new Set<string>();
+
+        Object.entries(empMap).forEach(([id, pIds]) => { if (pIds.length > 1) conflictingEmps.add(id); });
+        Object.entries(vehMap).forEach(([id, pIds]) => { if (pIds.length > 1) conflictingVehs.add(id); });
+
+        return { employees: conflictingEmps, vehicles: conflictingVehs };
+    }, [dayPlans]);
 
     return (
         <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} collisionDetection={closestCorners}>
@@ -457,17 +540,41 @@ export default function PlanningPage() {
                 {/* Header */}
                 <header className="flex items-center justify-between border-b bg-white px-6 py-3 shadow-sm z-10 relative">
                     <div className="flex items-center gap-4">
-                        {viewMode === 'day' && (
+                        {(viewMode === 'day' || viewMode === 'timeline') && (
                             <button onClick={() => setViewMode('week')} className="p-1.5 rounded hover:bg-slate-100 text-slate-600">
                                 <ArrowLeft className="h-5 w-5" />
                             </button>
                         )}
                         <h1 className="text-2xl font-bold text-slate-800">
-                            {viewMode === 'week' ? 'Einsatzplanung' : `Tagesplan: ${format(new Date(selectedDay), 'd. MMMM yyyy', { locale: de })}`}
+                            {viewMode === 'week' ? 'Einsatzplanung' :
+                                viewMode === 'day' ? `Tagesplan: ${format(new Date(selectedDay), 'd. MMMM yyyy', { locale: de })}` :
+                                    `Timeline: ${format(new Date(selectedDay), 'd. MMMM yyyy', { locale: de })}`}
                         </h1>
                     </div>
 
                     <div className="flex items-center gap-3">
+                        {viewMode !== 'week' && (
+                            <div className="flex p-1 bg-slate-100 rounded-lg mr-4">
+                                <button
+                                    onClick={() => setViewMode('day')}
+                                    className={cn(
+                                        "px-3 py-1.5 text-xs font-semibold rounded-md transition-all",
+                                        viewMode === 'day' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    Tagesansicht
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('timeline')}
+                                    className={cn(
+                                        "px-3 py-1.5 text-xs font-semibold rounded-md transition-all",
+                                        viewMode === 'timeline' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                    )}
+                                >
+                                    Timeline
+                                </button>
+                            </div>
+                        )}
                         {viewMode === 'week' && (
                             <div className="flex items-center gap-1 rounded-md border bg-white px-2 py-1">
                                 <button onClick={() => setCurrentDate(addDays(currentDate, -7))} className="p-1 hover:bg-slate-100 rounded"><ChevronLeft className="h-5 w-5 text-slate-600" /></button>
@@ -477,6 +584,23 @@ export default function PlanningPage() {
                                 <button onClick={() => setCurrentDate(addDays(currentDate, 7))} className="p-1 hover:bg-slate-100 rounded"><ChevronRight className="h-5 w-5 text-slate-600" /></button>
                             </div>
                         )}
+                        <button
+                            onClick={() => setIsCompact(!isCompact)}
+                            className={cn(
+                                "flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all shadow-sm border",
+                                isCompact ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                            )}
+                        >
+                            {isCompact ? "Detail Ansicht" : "Kompakt Modus"}
+                        </button>
+                        <div className="flex items-center gap-1 rounded-lg border bg-white px-1 py-1 mr-2">
+                            <button onClick={handleSaveTemplate} title="Als Vorlage speichern" className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600">
+                                <Save className="h-4 w-4" />
+                            </button>
+                            <button onClick={loadTemplates} title="Vorlage laden" className="p-1.5 hover:bg-slate-100 rounded text-slate-500 hover:text-blue-600">
+                                <FolderOpen className="h-4 w-4" />
+                            </button>
+                        </div>
                         <button onClick={() => openCreatePlan(selectedDay)}
                             className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 shadow-sm">
                             <Plus className="h-3.5 w-3.5" /> Neuer Einsatz
@@ -486,8 +610,7 @@ export default function PlanningPage() {
 
                 {/* Main Content */}
                 <div className="flex flex-1 overflow-hidden">
-                    {/* Sidebar: Projects (Visible in Week View only, or both?) - Keep visible in both as per user might need to drag? Actually drag only works on droppables. */}
-                    {/* Assuming Sidebar is only needed for Week view drag-drop scheduling */}
+                    {/* Sidebar: Projects (Visible in Week View only) */}
                     {viewMode === 'week' && (
                         <div className={cn("border-r bg-white flex flex-col transition-all duration-300", sidebarOpen ? "w-80" : "w-10")}>
                             <div className="p-3 border-b bg-slate-50/50 flex items-center justify-between">
@@ -551,50 +674,17 @@ export default function PlanningPage() {
                                 </div>
                             </div>
                         </div>
-                    ) : (
+                    ) : viewMode === 'day' ? (
                         /* ============ DAY VIEW ============ */
                         <div className="flex-1 overflow-auto p-6 space-y-8 max-w-5xl mx-auto w-full">
                             {/* 1. Vehicles (Top) */}
-                            <section>
-                                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Fahrzeuge</h3>
-                                <div className="grid grid-cols-4 md:grid-cols-5 gap-3">
-                                    {["L4N", "L4U", "L Khalid", "L Caddy", "L Star"].map(vName => {
-                                        const v = vehicles.find(veh => (veh.nickname || veh.vehicle_id) === vName);
-                                        if (!v) return null;
-                                        const vs = vehicleStatuses.find(s => s.vehicle_name === v.nickname && s.plan_date === selectedDay);
-                                        return (
-                                            <div key={v.vehicle_id} className="rounded-lg border border-slate-200 p-2.5 bg-white shadow-sm">
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <span className="text-xs font-semibold text-slate-700 flex items-center gap-1 truncate"><Truck className="h-3 w-3" />{v.nickname || v.vehicle_id}</span>
-                                                    <select className="text-[10px] border rounded px-1 py-0.5 bg-slate-50"
-                                                        value={vs?.status || ''}
-                                                        onChange={e => saveVehicleStatus(v.vehicle_id, v.nickname || v.vehicle_id, e.target.value, vs?.informationen || '')}>
-                                                        <option value="">—</option>
-                                                        <option value="Einsatz">Einsatz</option>
-                                                        <option value="Frei">Frei</option>
-                                                        <option value="Werkstatt">Werkstatt</option>
-                                                    </select>
-                                                </div>
-                                                <input className="w-full text-[10px] border rounded px-2 py-1 bg-slate-50"
-                                                    placeholder="Info..."
-                                                    value={vs?.informationen || ''}
-                                                    onBlur={e => saveVehicleStatus(v.vehicle_id, v.nickname || v.vehicle_id, vs?.status || '', e.target.value)}
-                                                    onChange={e => {
-                                                        const newVal = e.target.value;
-                                                        setVehicleStatuses(prev => {
-                                                            const copy = [...prev];
-                                                            const idx = copy.findIndex(s => s.vehicle_name === v.nickname && s.plan_date === selectedDay);
-                                                            if (idx >= 0) copy[idx] = { ...copy[idx], informationen: newVal };
-                                                            else copy.push({ id: 0, vehicle_name: v.nickname || '', plan_date: selectedDay, status: '', informationen: newVal, vehicle_id: v.vehicle_id, created_at: null, updated_at: null });
-                                                            return copy;
-                                                        });
-                                                    }}
-                                                />
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </section>
+                            <VehicleList
+                                vehicles={vehicles}
+                                vehicleStatuses={vehicleStatuses}
+                                selectedDay={selectedDay}
+                                saveVehicleStatus={saveVehicleStatus}
+                                setVehicleStatuses={setVehicleStatuses}
+                            />
 
                             {/* 2. Projects (Middle) */}
                             <section>
@@ -602,110 +692,27 @@ export default function PlanningPage() {
                                     <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Aufträge ({dayPlans.length})</h3>
                                 </div>
                                 <div className="space-y-6">
-                                    {dayPlans.map(plan => (
-                                        <div key={plan.plan_id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col md:flex-row">
-                                            {/* LEFT: Project Info */}
-                                            <div className="md:w-1/3 bg-slate-50 px-5 py-4 border-b md:border-b-0 md:border-r flex flex-col justify-between">
-                                                <div>
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className="text-sm font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{plan.start_time?.substring(0, 5) || '07:00'}</span>
-                                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide border border-slate-200 px-2 py-0.5 rounded">{plan.service_type || 'Service'}</span>
-                                                    </div>
-                                                    <h4 className="font-bold text-slate-800 text-xl leading-snug mb-1">{plan.project?.name || 'Unbekannt'}</h4>
-                                                    <div className="text-sm text-slate-600 flex items-start gap-1.5 mb-4">
-                                                        <span className="text-base mt-0.5">📍</span>
-                                                        <span className="leading-tight">
-                                                            {[plan.project?.strasse, plan.project?.nr].filter(Boolean).join(' ')}<br />
-                                                            {plan.project?.plz} {plan.project?.ort}
-                                                        </span>
-                                                    </div>
-
-                                                    {plan.vehicle_names && (
-                                                        <div className="mb-4">
-                                                            <div className="inline-block bg-orange-50 text-orange-800 border border-orange-100 rounded-md px-2.5 py-1.5 text-xs font-semibold shadow-sm">
-                                                                🚛 {plan.vehicle_names}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {plan.notes && (
-                                                        <div className="bg-yellow-50 text-yellow-800 border border-yellow-200 p-2.5 text-xs italic rounded-lg relative">
-                                                            <span className="absolute top-1 right-2 text-yellow-400 font-serif text-xl">”</span>
-                                                            {plan.notes}
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-slate-200/60">
-                                                    <button onClick={() => openEditPlan(plan)} className="flex-1 py-1.5 rounded-md bg-white border border-slate-300 text-xs font-medium text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors">Bearbeiten</button>
-                                                    <button onClick={(e) => handleDeletePlan(plan.plan_id, e)} className="p-1.5 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="h-4 w-4" /></button>
-                                                </div>
-                                            </div>
-
-                                            {/* RIGHT: Staff Table (Inline) */}
-                                            <div className="flex-1 p-0 flex flex-col">
-                                                <div className="px-5 py-3 bg-white border-b border-slate-100 flex items-center justify-between">
-                                                    <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                                                        <Users className="h-3.5 w-3.5" /> Einsatz-Team
-                                                    </h5>
-                                                    <div className="flex items-center gap-2">
-                                                        <select
-                                                            className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-slate-50 hover:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-all w-48"
-                                                            onChange={(e) => {
-                                                                if (e.target.value) {
-                                                                    addStaffToPlan(plan.plan_id, e.target.value);
-                                                                    e.target.value = ""; // Reset select
-                                                                }
-                                                            }}
-                                                        >
-                                                            <option value="">+ Mitarbeiter hinzufügen...</option>
-                                                            {employees.map(emp => (
-                                                                <option key={emp.employee_id} value={emp.employee_id}>
-                                                                    {emp.name} ({emp.contract_type || '?'})
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex-1 overflow-x-auto">
-                                                    <table className="w-full text-xs text-left">
-                                                        <thead className="text-slate-400 font-medium bg-slate-50/50 border-b border-slate-100">
-                                                            <tr>
-                                                                <th className="px-5 py-2 w-1/3">Name</th>
-                                                                <th className="px-2 py-2 w-20">Start</th>
-                                                                <th className="px-2 py-2">Info / Rolle</th>
-                                                                <th className="px-2 py-2 w-10"></th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-50">
-                                                            <SortableContext
-                                                                items={(plan.staff || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 1)).map(s => `staff-${s.id}`)}
-                                                                strategy={verticalListSortingStrategy}
-                                                            >
-                                                                {(plan.staff || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(staff => (
-                                                                    <SortableStaffRow
-                                                                        key={staff.id}
-                                                                        staff={staff}
-                                                                        planStaff={plan.staff || []}
-                                                                        onUpdate={updateStaffMember}
-                                                                        onRemove={removeStaffFromPlan}
-                                                                    />
-                                                                ))}
-                                                            </SortableContext>
-                                                            {(plan.staff || []).length === 0 && (
-                                                                <tr>
-                                                                    <td colSpan={4} className="px-5 py-8 text-center text-slate-300 italic">
-                                                                        Noch keine Mitarbeiter zugewiesen.
-                                                                    </td>
-                                                                </tr>
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                    <SortableContext
+                                        items={dayPlans.map(p => `plan-${p.plan_id}`)}
+                                        strategy={verticalListSortingStrategy}
+                                    >
+                                        {dayPlans.map(plan => (
+                                            <ProjectCard
+                                                key={plan.plan_id}
+                                                plan={plan}
+                                                onEditPlan={openEditPlan}
+                                                onDelete={handleDeletePlan}
+                                                employees={employees}
+                                                onAddStaff={addStaffToPlan}
+                                                onUpdateStaff={updateStaffMember}
+                                                onRemoveStaff={removeStaffFromPlan}
+                                                compact={isCompact}
+                                                conflicts={conflicts}
+                                                onDuplicate={duplicatePlan}
+                                                onMoveToTomorrow={moveToTomorrow}
+                                            />
+                                        ))}
+                                    </SortableContext>
                                     {dayPlans.length === 0 && (
                                         <div className="col-span-full py-12 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
                                             Noch keine Aufträge für diesen Tag.
@@ -715,95 +722,22 @@ export default function PlanningPage() {
                             </section>
 
                             {/* 3. Employee Notes (Bottom) */}
-                            <section className="pb-10">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    {/* INTERN */}
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Interne Mitarbeiter</h3>
-                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                                            <table className="w-full text-sm">
-                                                <thead className="bg-slate-50 border-b text-xs font-medium text-slate-500 uppercase">
-                                                    <tr>
-                                                        <th className="px-4 py-2 text-left">Name</th>
-                                                        <th className="px-4 py-2 text-left">Info</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {employees.filter(e => e.contract_type !== 'Freelance' && e.contract_type !== 'Extern').map(emp => {
-                                                        const note = employeeNotes.find(n => n.employee_code === (emp.employee_code || emp.name));
-                                                        return (
-                                                            <tr key={emp.employee_id} className="hover:bg-slate-50">
-                                                                <td className="px-4 py-2 font-medium text-slate-700">{emp.name}</td>
-                                                                <td className="px-4 py-2">
-                                                                    <input className="w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 focus:outline-none py-1 text-slate-600"
-                                                                        placeholder="—"
-                                                                        defaultValue={note?.notizen || ''}
-                                                                        onBlur={async (e) => {
-                                                                            const val = e.target.value;
-                                                                            if (val === (note?.notizen || '')) return;
-
-                                                                            const code = emp.employee_code || emp.name;
-                                                                            if (note) {
-                                                                                await supabase.from('t_employee_daily_notes').update({ notizen: val }).eq('id', note.id);
-                                                                            } else if (val) {
-                                                                                await supabase.from('t_employee_daily_notes').insert({ employee_code: code, employee_id: emp.employee_id, plan_date: selectedDay, notizen: val, sort_order: 0 });
-                                                                            }
-                                                                            fetchDayPanels();
-                                                                        }}
-                                                                    />
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-
-                                    {/* EXTERN */}
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Externe Mitarbeiter</h3>
-                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                                            <table className="w-full text-sm">
-                                                <thead className="bg-slate-50 border-b text-xs font-medium text-slate-500 uppercase">
-                                                    <tr>
-                                                        <th className="px-4 py-2 text-left">Name</th>
-                                                        <th className="px-4 py-2 text-left">Info</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {employees.filter(e => e.contract_type === 'Freelance' || e.contract_type === 'Extern').map(emp => {
-                                                        const note = employeeNotes.find(n => n.employee_code === (emp.employee_code || emp.name));
-                                                        return (
-                                                            <tr key={emp.employee_id} className="hover:bg-slate-50">
-                                                                <td className="px-4 py-2 font-medium text-slate-700">{emp.name}</td>
-                                                                <td className="px-4 py-2">
-                                                                    <input className="w-full bg-transparent border-b border-transparent hover:border-slate-200 focus:border-blue-400 focus:outline-none py-1 text-slate-600"
-                                                                        placeholder="—"
-                                                                        defaultValue={note?.notizen || ''}
-                                                                        onBlur={async (e) => {
-                                                                            const val = e.target.value;
-                                                                            if (val === (note?.notizen || '')) return;
-
-                                                                            const code = emp.employee_code || emp.name;
-                                                                            if (note) {
-                                                                                await supabase.from('t_employee_daily_notes').update({ notizen: val }).eq('id', note.id);
-                                                                            } else if (val) {
-                                                                                await supabase.from('t_employee_daily_notes').insert({ employee_code: code, employee_id: emp.employee_id, plan_date: selectedDay, notizen: val, sort_order: 0 });
-                                                                            }
-                                                                            fetchDayPanels();
-                                                                        }}
-                                                                    />
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
+                            <EmployeeNotes
+                                employees={employees}
+                                employeeNotes={employeeNotes}
+                                selectedDay={selectedDay}
+                                fetchDayPanels={fetchDayPanels}
+                            />
+                        </div>
+                    ) : (
+                        /* ============ TIMELINE VIEW ============ */
+                        <div className="flex-1 overflow-auto p-6">
+                            <TimelineView
+                                plans={dayPlans}
+                                selectedDay={selectedDay}
+                                employees={employees}
+                                vehicles={vehicles}
+                            />
                         </div>
                     )}
                 </div>
@@ -893,8 +827,41 @@ export default function PlanningPage() {
                 </div>
             )}
 
-
-
+            {/* ======= TEMPLATE MODAL ======= */}
+            {templateModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setTemplateModalOpen(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md m-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between border-b px-6 py-4">
+                            <h2 className="text-lg font-bold text-slate-800">Vorlagen</h2>
+                            <button onClick={() => setTemplateModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100"><X className="h-5 w-5 text-slate-400" /></button>
+                        </div>
+                        <div className="p-2 overflow-y-auto flex-1">
+                            {loadingTemplates ? (
+                                <div className="text-center py-8 text-slate-400"><Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />Laden...</div>
+                            ) : templates.length === 0 ? (
+                                <div className="text-center py-8 text-slate-400">Keine Vorlagen gefunden.</div>
+                            ) : (
+                                <div className="space-y-1">
+                                    {templates.map(t => (
+                                        <div key={t.id} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-lg group border border-transparent hover:border-slate-100">
+                                            <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => applyTemplate(t.id)}>
+                                                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><List className="h-4 w-4" /></div>
+                                                <div>
+                                                    <div className="font-medium text-slate-700">{t.name}</div>
+                                                    <div className="text-xs text-slate-400">{format(new Date(t.created_at), 'dd.MM.yyyy HH:mm', { locale: de })}</div>
+                                                </div>
+                                            </div>
+                                            <button onClick={(e) => deleteTemplate(e, t.id)} className="p-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </DndContext>
     );
