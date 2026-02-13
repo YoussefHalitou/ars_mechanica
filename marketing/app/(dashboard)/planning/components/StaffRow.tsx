@@ -48,12 +48,28 @@ export function StaffRow({ staff, onUpdate, onRemove, isConflicted = false }: {
             </td>
             <td className="px-2 py-2">
                 <input
-                    type="time"
-                    className="w-full bg-transparent border border-transparent rounded px-1 py-0.5 hover:border-slate-300 focus:border-blue-400 focus:bg-white transition-all text-slate-600 font-mono"
+                    type="text"
+                    maxLength={5}
+                    placeholder="00:00"
+                    className="w-full bg-transparent border border-transparent rounded px-1 py-0.5 hover:border-slate-300 focus:border-blue-400 focus:bg-white transition-all text-slate-600 font-mono text-center"
                     defaultValue={staff.individual_start_time?.substring(0, 5) || ''}
                     onBlur={(e) => {
-                        if (e.target.value !== staff.individual_start_time?.substring(0, 5)) {
-                            onUpdate(staff.id, 'individual_start_time', e.target.value);
+                        let val = e.target.value.trim();
+                        // Simple formatting fix: 800 -> 08:00, 8 -> 08:00
+                        if (val.length === 1) val = `0${val}:00`;
+                        else if (val.length === 2 && !val.includes(':')) val = `${val}:00`;
+                        else if (val.length === 3 && !val.includes(':')) val = `0${val[0]}:${val.slice(1)}`;
+                        else if (val.length === 4 && !val.includes(':')) val = `${val.slice(0, 2)}:${val.slice(2)}`;
+
+                        // Validate HH:MM
+                        const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+                        if (val && !timeRegex.test(val)) {
+                            // detailed validation could be done here, or just revert/clear
+                        }
+
+                        if (val && val !== staff.individual_start_time?.substring(0, 5)) {
+                            onUpdate(staff.id, 'individual_start_time', val);
+                            e.target.value = val;
                         }
                     }}
                 />

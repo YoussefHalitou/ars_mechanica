@@ -2,7 +2,7 @@ import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/utils';
-import { MoreHorizontal, Trash2, Users, Copy, ArrowRight } from 'lucide-react';
+import { MoreHorizontal, Trash2, Users, Copy, ArrowRight, Plus } from 'lucide-react';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { StaffRow } from './StaffRow';
 import { MorningPlan, Employee } from './types';
@@ -114,9 +114,12 @@ export function ProjectCard({
                         <Users className="h-3 w-3" /> Einsatz-Team
                     </h5>
                     {!compact && (
-                        <div className="flex items-center gap-2">
+                        <div className="relative group/add">
+                            <button className="flex items-center justify-center h-6 w-6 rounded-full bg-slate-100 hover:bg-blue-100 text-slate-400 hover:text-blue-600 border border-slate-200 hover:border-blue-200 transition-all shadow-sm" title="Mitarbeiter hinzufügen">
+                                <Plus className="h-3.5 w-3.5" />
+                            </button>
                             <select
-                                className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-slate-50 hover:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 transition-all w-48"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                 onChange={(e) => {
                                     if (e.target.value) {
                                         onAddStaff(plan.plan_id, e.target.value);
@@ -124,7 +127,7 @@ export function ProjectCard({
                                     }
                                 }}
                             >
-                                <option value="">+ Mitarbeiter hinzufügen...</option>
+                                <option value="">Mitarbeiter hinzufügen...</option>
                                 {employees.map(emp => (
                                     <option key={emp.employee_id} value={emp.employee_id}>
                                         {emp.name} ({emp.contract_type || '?'})
