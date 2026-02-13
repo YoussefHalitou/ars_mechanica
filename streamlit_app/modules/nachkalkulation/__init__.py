@@ -1,3 +1,0 @@
-"""
-Nachkalkulation Streamlit module
-"""

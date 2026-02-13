@@ -1,3 +1,0 @@
-"""
-Morningplan Streamlit module
-"""

@@ -154,9 +154,11 @@ export default function CalculationPage() {
 
         const [tpRes, matRes, vehRes, svcRes, revRes, extRes, discRes] = await Promise.all([
             supabase.from('t_time_pairs').select('*').eq('project_id', pid).order('datum'),
-            supabase.from('t_project_material_usage').select('*, material:t_materials(name, unit), prices:t_material_prices(cost_per_unit, price_per_unit)').eq('project_id', pid),
+            // Nested query for material prices
+            supabase.from('t_project_material_usage').select('*, material:t_materials(name, unit, prices:t_material_prices(cost_per_unit, price_per_unit))').eq('project_id', pid),
             supabase.from('t_project_vehicle_costs').select('*, vehicle:t_vehicles(nickname)').eq('project_id', pid),
-            supabase.from('t_project_service_usage').select('*, service:t_services(name, default_unit), prices:t_service_prices(cost_per_unit, supplier)').eq('project_id', pid),
+            // Nested query for service prices
+            supabase.from('t_project_service_usage').select('*, service:t_services(name, default_unit, prices:t_service_prices(cost_per_unit, supplier))').eq('project_id', pid),
             supabase.from('t_project_revenue_items').select('*').eq('project_id', pid).order('sort_order'),
             supabase.from('t_project_costs_extra').select('*').eq('project_id', pid),
             supabase.from('t_project_discounts').select('*').eq('project_id', pid),
@@ -174,7 +176,8 @@ export default function CalculationPage() {
         }));
 
         setMaterials((matRes.data as any || []).map((m: any) => {
-            const p = Array.isArray(m.prices) ? m.prices[0] : m.prices;
+            const prices = m.material?.prices;
+            const p = Array.isArray(prices) ? prices[0] : prices;
             return {
                 id: m.id, material_id: m.material_id, material_name: m.material?.name || m.material_id, unit: m.material?.unit || '',
                 quantity: m.quantity, cost_per_unit: p?.cost_per_unit || 0, price_per_unit: p?.price_per_unit || 0,
@@ -189,7 +192,8 @@ export default function CalculationPage() {
         })));
 
         setServices((svcRes.data as any || []).map((s: any) => {
-            const p = Array.isArray(s.prices) ? s.prices[0] : s.prices;
+            const prices = s.service?.prices;
+            const p = Array.isArray(prices) ? prices[0] : prices;
             return {
                 id: s.id, service_id: s.service_id, service_name: s.service?.name || s.service_id, supplier: p?.supplier || '',
                 quantity: s.quantity || 1, unit: s.service?.default_unit || 'Std', cost_per_unit: p?.cost_per_unit || 0,
@@ -399,30 +403,178 @@ export default function CalculationPage() {
 
     // ---- EXPORT ----
     const exportHTML = () => {
-        const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Nachkalkulation – ${selectedProject?.name || ''}</title>
-        <style>body{font-family:system-ui;margin:2rem;color:#1e293b}h1{font-size:1.5rem}h2{margin-top:1.5rem;font-size:1.1rem;border-bottom:2px solid #e2e8f0;padding-bottom:4px}table{width:100%;border-collapse:collapse;margin:.5rem 0}th,td{border:1px solid #e2e8f0;padding:6px 10px;text-align:left;font-size:.8rem}th{background:#f1f5f9;font-weight:600}.right{text-align:right}.kpi{display:flex;gap:1rem;margin:1rem 0}.kpi-card{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:.75rem;text-align:center}.kpi-label{font-size:.7rem;color:#64748b;text-transform:uppercase}.kpi-value{font-size:1.3rem;font-weight:700;margin-top:2px}.positive{color:#16a34a}.negative{color:#dc2626}</style></head><body>
-        <h1>Nachkalkulation: ${selectedProject?.anrede || ''} ${selectedProject?.name || ''}</h1>
-        <p>${selectedProject?.strasse || ''} ${selectedProject?.nr || ''}, ${selectedProject?.plz || ''} ${selectedProject?.ort || ''}</p>
-        <div class="kpi"><div class="kpi-card"><div class="kpi-label">Gesamtkosten</div><div class="kpi-value">${eur(totalCosts)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">Gesamterlöse</div><div class="kpi-value">${eur(totalRevenue)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">Marge</div><div class="kpi-value ${margin >= 0 ? 'positive' : 'negative'}">${eur(margin)}</div></div>
-        <div class="kpi-card"><div class="kpi-label">Marge %</div><div class="kpi-value ${marginPct >= 0 ? 'positive' : 'negative'}">${marginPct.toFixed(1)}%</div></div></div>
-        <h2>1. Personalkosten (${eur(personalKosten)})</h2><table><tr><th>Datum</th><th>Mitarbeiter</th><th>LiS Std.</th><th class="right">Satz</th><th class="right">Kosten</th></tr>
-        ${personnel.map(p => `<tr><td>${p.datum}</td><td>${p.mitarbeiter}</td><td>${p.lis_stunden.toFixed(2)}</td><td class="right">${eur(p.satz)}</td><td class="right">${eur(p.kosten)}</td></tr>`).join('')}
-        <tr><th colspan="4">Summe</th><th class="right">${eur(personalKosten)}</th></tr></table>
-        <h2>2. Materialkosten (${eur(materialKosten)})</h2><table><tr><th>Material</th><th>Menge</th><th>Einheit</th><th class="right">EK</th><th class="right">Kosten</th></tr>
-        ${materials.map(m => `<tr><td>${m.material_name}</td><td>${m.quantity}</td><td>${m.unit}</td><td class="right">${eur(m.cost_per_unit)}</td><td class="right">${eur(m.total_cost)}</td></tr>`).join('')}
-        <tr><th colspan="4">Summe</th><th class="right">${eur(materialKosten)}</th></tr></table>
-        <h2>3. Fahrzeugkosten (${eur(vehicleKosten)})</h2><table><tr><th>Fahrzeug</th><th>Typ</th><th>Wert</th><th class="right">Satz</th><th class="right">Kosten</th></tr>
-        ${vehicles.map(v => `<tr><td>${v.fahrzeug}</td><td>${v.usage_type}</td><td>${v.usage_value}</td><td class="right">${eur(v.cost_per_unit)}</td><td class="right">${eur(v.total_cost)}</td></tr>`).join('')}
-        <tr><th colspan="4">Summe</th><th class="right">${eur(vehicleKosten)}</th></tr></table>
-        <h2>4. Dienstleistungskosten (${eur(serviceKosten)})</h2><table><tr><th>Leistung</th><th>Lieferant</th><th>Menge</th><th class="right">EK</th><th class="right">Kosten</th></tr>
-        ${services.map(s => `<tr><td>${s.service_name}</td><td>${s.supplier}</td><td>${s.quantity}</td><td class="right">${eur(s.cost_per_unit)}</td><td class="right">${eur(s.total_cost)}</td></tr>`).join('')}
-        <tr><th colspan="4">Summe</th><th class="right">${eur(serviceKosten)}</th></tr></table>
-        <h2>5. Erlöse (${eur(revenueTotal)})</h2><table><tr><th>Position</th><th>Menge</th><th>Einheit</th><th class="right">Preis</th><th class="right">Gesamt</th></tr>
-        ${revenue.map(r => `<tr><td>${r.position_label}</td><td>${r.qty}</td><td>${r.unit}</td><td class="right">${eur(r.unit_price)}</td><td class="right">${eur(r.line_total)}</td></tr>`).join('')}
-        <tr><th colspan="4">Summe Erlöse</th><th class="right">${eur(revenueTotal)}</th></tr></table>
-        </body></html>`;
+        if (!selectedProject) return;
+
+        const renderTable = (headers: string[], body: string) => `
+        <table style="border-collapse:collapse;width:100%;margin:8px 0;font-size:12px;">
+            <thead><tr>${headers.map(h => `<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #ddd;">${h}</th>`).join('')}</tr></thead>
+            <tbody>${body || '<tr><td colspan="' + headers.length + '" style="padding:8px;font-style:italic;">Keine Daten</td></tr>'}</tbody>
+        </table>`;
+
+        // 1. Personal Rows
+        const personalRows = personnel.map(p => `<tr>
+            <td style="padding:2px 8px;">${p.mitarbeiter || ''}</td>
+            <td style="padding:2px 8px;">${p.kunde_von || ''}</td>
+            <td style="padding:2px 8px;">${p.kunde_bis || ''}</td>
+            <td style="padding:2px 8px;">${p.lis_von || ''}</td>
+            <td style="padding:2px 8px;">${p.lis_bis || ''}</td>
+            <td style="padding:2px 8px;">${Number(p.lis_stunden).toFixed(2)}</td>
+            <td style="padding:2px 8px;">${Number(p.kunden_stunden).toFixed(2)}</td>
+            <td style="padding:2px 8px;">${eur(p.kosten)}</td>
+        </tr>`).join('');
+
+        // 2. Vehicle Rows
+        const vehicleRows = vehicles.map(v => `<tr>
+            <td style="padding:2px 8px;">${v.usage_type || ''}</td>
+            <td style="padding:2px 8px;">${v.usage_value || ''}</td>
+            <td style="padding:2px 8px;">${eur(v.cost_per_unit)}</td>
+            <td style="padding:2px 8px;">${eur(v.total_cost)}</td>
+            <td style="padding:2px 8px;">${v.notes || ''}</td>
+        </tr>`).join('');
+
+        // 3. Material Rows
+        const materialRows = materials.map(m => `<tr>
+            <td style="padding:2px 8px;">${m.material_name || ''}</td>
+            <td style="padding:2px 8px;">${m.quantity}</td>
+            <td style="padding:2px 8px;">${eur(m.cost_per_unit || 0)}</td>
+            <td style="padding:2px 8px;">${eur(m.price_per_unit || 0)}</td>
+            <td style="padding:2px 8px;">${eur(m.total_cost)}</td>
+            <td style="padding:2px 8px;">${eur(m.total_price)}</td>
+        </tr>`).join('');
+
+        // 4. Service Rows (Zusatzkosten / Services mixed in retool, separating here based on state)
+        // Combining Services + Extra Costs for "Zusatzkosten" section or keeping separate?
+        // User template had "4. Zusatzkosten (Services)".
+        // Let's iterate both or just services. The user's retool might have had them combined.
+        // I will list Services here.
+        const serviceRows = services.map(s => `<tr>
+            <td style="padding:2px 8px;">${s.service_name || ''}</td>
+            <td style="padding:2px 8px;">${eur(s.total_cost)}</td>
+        </tr>`).join('');
+
+        // Also add "Extra Costs" (Sonderkosten) to this section or a new one?
+        // The user template has "4. Zusatzkosten (Services)". 
+        // I'll add extraCosts as a separate table or append. 
+        // Let's append extra costs rows to serviceRows for now to match "Zusatzkosten".
+        const extraCostRows = extraCosts.map(e => `<tr>
+            <td style="padding:2px 8px;">${e.description || e.cost_type}</td>
+            <td style="padding:2px 8px;">${eur(e.cost)}</td>
+        </tr>`).join('');
+
+        const combinedServiceRows = serviceRows + extraCostRows;
+
+        // 5. Revenue
+        const revenueRows = revenue.map(r => `<tr>
+            <td style="padding:2px 8px;">${r.position_label || ''}</td>
+            <td style="padding:2px 8px;">${r.qty}</td>
+            <td style="padding:2px 8px;">${r.unit || ''}</td>
+            <td style="padding:2px 8px;">${eur(r.unit_price)}</td>
+            <td style="padding:2px 8px;">${eur(r.line_total)}</td>
+        </tr>`).join('');
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="de">
+        <head>
+        <meta charset="UTF-8" />
+        <title>Nachkalkulation ${selectedProject.project_code || ''}</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #111827; }
+            h1 { font-size: 20px; margin-bottom: 4px; }
+            h2 { font-size: 16px; margin-top: 16px; margin-bottom: 4px; border-bottom: 1px solid #e5e7eb; padding-bottom: 2px; }
+            h3 { font-size: 14px; margin-top: 10px; margin-bottom: 2px; }
+            .section { margin-top: 16px; }
+            .kpi-row { display:flex; gap:16px; margin-top:8px; }
+            .kpi { padding:8px 12px; border-radius:8px; background:#f9fafb; border:1px solid #e5e7eb; }
+            .kpi-label { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:#6b7280; }
+            .kpi-value { font-size:14px; font-weight:600; }
+        </style>
+        </head>
+        <body>
+        <h1>Nachkalkulation</h1>
+        <p><strong>Datum:</strong> ${format(new Date(), 'dd.MM.yyyy')}<br/>
+            <strong>Projekt:</strong> ${selectedProject.project_code || ''} – ${selectedProject.name || ''}<br/>
+            <strong>Kunde:</strong> ${selectedProject.name || ''}<br/>
+            <strong>Adresse:</strong> ${[selectedProject.strasse, selectedProject.nr].filter(Boolean).join(' ')}${selectedProject.plz || selectedProject.ort ? ', ' : ''}${[selectedProject.plz, selectedProject.ort].filter(Boolean).join(' ')}
+        </p>
+
+        <div class="kpi-row">
+            <div class="kpi">
+            <div class="kpi-label">Gesamtkosten</div>
+            <div class="kpi-value">${eur(totalCosts)}</div>
+            </div>
+            <div class="kpi">
+            <div class="kpi-label">Gesamterlöse</div>
+            <div class="kpi-value">${eur(totalRevenue)}</div>
+            </div>
+            <div class="kpi">
+            <div class="kpi-label">Marge (EUR)</div>
+            <div class="kpi-value">${eur(margin)}</div>
+            </div>
+            <div class="kpi">
+            <div class="kpi-label">Marge (%)</div>
+            <div class="kpi-value">${marginPct.toFixed(1)} %</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>1. Personal</h2>
+            ${renderTable(
+            ['Mitarbeiter', 'Kunde Von', 'Kunde Bis', 'LiS Von', 'LiS Bis', 'LiS Stunden', 'Kunden Stunden', 'Kosten'],
+            personalRows
+        )}
+            <p><strong>Summe Personal:</strong> ${eur(personalKosten)}</p>
+        </div>
+
+        <div class="section">
+            <h2>2. Fahrzeuge</h2>
+            ${renderTable(
+            ['Typ', 'Menge/Wert', 'Kosten/Einheit', 'Gesamtkosten', 'Notiz'],
+            vehicleRows
+        )}
+            <p><strong>Summe Fahrzeuge:</strong> ${eur(vehicleKosten)}</p>
+        </div>
+
+        <div class="section">
+            <h2>3. Material</h2>
+            ${renderTable(
+            ['Material', 'Menge', 'EK (€)', 'VK (€)', 'Gesamt (EK)', 'Gesamt (VK)'],
+            materialRows
+        )}
+            <p><strong>Summe Material (EK):</strong> ${eur(materialKosten)}<br/>
+            <strong>Summe Material (VK):</strong> ${eur(materialErloes)}</p>
+        </div>
+
+        <div class="section">
+            <h2>4. Zusatzkosten (Services)</h2>
+            ${renderTable(
+            ['Beschreibung', 'Kosten'],
+            combinedServiceRows
+        )}
+            <p><strong>Summe Zusatzkosten:</strong> ${eur(serviceKosten + extraKosten)}</p>
+        </div>
+
+        <div class="section">
+            <h2>5. Erlöse</h2>
+            ${renderTable(
+            ['Position', 'Menge', 'Einheit', 'EP', 'Zeilensumme'],
+            revenueRows
+        )}
+             <p><strong>Summe Erlöse:</strong> ${eur(revenueTotal)}</p>
+        </div>
+
+        <div class="section">
+            <h2>7. Zusammenfassung</h2>
+            <p><strong>Gesamtkosten:</strong> ${eur(totalCosts)}<br/>
+            <strong>Gesamterlöse:</strong> ${eur(totalRevenue)}<br/>
+            <strong>Marge (EUR):</strong> ${eur(margin)}<br/>
+            <strong>Marge (%):</strong> ${marginPct.toFixed(1)} %
+            </p>
+        </div>
+        </body>
+        </html>
+        `;
+
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = `Nachkalkulation_${selectedProject?.name || 'Projekt'}.html`; a.click();
