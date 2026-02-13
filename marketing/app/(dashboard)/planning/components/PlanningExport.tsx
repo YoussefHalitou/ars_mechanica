@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Download, Loader2, Calendar } from 'lucide-react';
+import { Download, Loader2, Calendar, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 
 export function PlanningExport() {
@@ -50,30 +46,30 @@ export function PlanningExport() {
 
             // Generate HTML
             let html = `
-            <!DOCTYPE html>
-            <html lang="de">
+    < !DOCTYPE html >
+        <html lang="de">
             <head>
                 <meta charset="UTF-8">
-                <title>Nachkalkulation ${date}</title>
-                <style>
-                    body { font-family: sans-serif; padding: 20px; line-height: 1.5; color: #333; }
-                    h1 { color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 10px; }
-                    h2 { margin-top: 30px; color: #475569; background: #f1f5f9; padding: 8px; border-radius: 4px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
-                    th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
-                    th { background-color: #f8fafc; font-weight: 600; color: #475569; }
-                    .text-right { text-align: right; }
-                    .font-bold { font-weight: bold; }
-                    .total-row { background-color: #f0f9ff; font-weight: bold; }
-                    .cost-positive { color: #dc2626; } /* Costs are red/expense */
-                    .profit-positive { color: #16a34a; } /* Profit is green */
-                    .meta { margin-bottom: 20px; color: #64748b; font-size: 0.9em; }
-                </style>
+                    <title>Nachkalkulation ${date}</title>
+                    <style>
+                        body {font - family: sans-serif; padding: 20px; line-height: 1.5; color: #333; }
+                        h1 {color: #2563eb; border-bottom: 2px solid #2563eb; padding-bottom: 10px; }
+                        h2 {margin - top: 30px; color: #475569; background: #f1f5f9; padding: 8px; border-radius: 4px; }
+                        table {width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+                        th, td {border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
+                        th {background - color: #f8fafc; font-weight: 600; color: #475569; }
+                        .text-right {text - align: right; }
+                        .font-bold {font - weight: bold; }
+                        .total-row {background - color: #f0f9ff; font-weight: bold; }
+                        .cost-positive {color: #dc2626; } /* Costs are red/expense */
+                        .profit-positive {color: #16a34a; } /* Profit is green */
+                        .meta {margin - bottom: 20px; color: #64748b; font-size: 0.9em; }
+                    </style>
             </head>
             <body>
                 <h1>Nachkalkulation: ${format(new Date(date), 'dd.MM.yyyy')}</h1>
                 <div class="meta">Exportiert am ${new Date().toLocaleString('de-DE')}</div>
-            `;
+                `;
 
             if (!plans || plans.length === 0) {
                 html += `<p>Keine Projekte für dieses Datum gefunden.</p>`;
@@ -195,8 +191,8 @@ export function PlanningExport() {
 
             html += `
             </body>
-            </html>
-            `;
+        </html>
+`;
 
             // Download
             const blob = new Blob([html], { type: 'text/html' });
@@ -219,38 +215,59 @@ export function PlanningExport() {
     };
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                    <Download className="h-4 w-4" />
-                    Export
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                    <DialogTitle>Nachkalkulation exportieren</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="date" className="text-right">
-                            Datum
-                        </Label>
-                        <Input
-                            id="date"
-                            type="date"
-                            value={date}
-                            onChange={(e) => setDate(e.target.value)}
-                            className="col-span-3"
-                        />
+        <>
+            <button
+                onClick={() => setOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
+            >
+                <Download className="h-4 w-4" />
+                Export
+            </button>
+
+            {open && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setOpen(false)}>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm m-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between border-b px-4 py-3 bg-slate-50">
+                            <h3 className="text-sm font-bold text-slate-800">Nachkalkulation exportieren</h3>
+                            <button onClick={() => setOpen(false)} className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="block text-xs font-medium text-slate-500">Datum wählen</label>
+                                <div className="relative">
+                                    <input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                                    />
+                                    <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 bg-slate-50 px-4 py-3 border-t">
+                            <button
+                                onClick={() => setOpen(false)}
+                                className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-md transition-colors"
+                            >
+                                Abbrechen
+                            </button>
+                            <button
+                                onClick={handleExport}
+                                disabled={loading}
+                                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            >
+                                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                                Exportieren
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div className="flex justify-end">
-                    <Button onClick={handleExport} disabled={loading}>
-                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Exportieren
-                    </Button>
-                </div>
-            </DialogContent>
-        </Dialog>
+            )}
+        </>
     );
 }
