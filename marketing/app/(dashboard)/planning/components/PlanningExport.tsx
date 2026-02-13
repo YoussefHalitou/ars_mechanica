@@ -205,11 +205,11 @@ export function PlanningExport() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            toast({ title: "Export erfolgreich", description: `Nachkalkulation_${date}.html heruntergeladen.` });
+            toast(`Export erfolgreich: Nachkalkulation_${date}.html heruntergeladen.`, 'success');
             setOpen(false);
         } catch (error) {
             console.error(error);
-            toast({ title: "Fehler beim Export", description: "Daten konnten nicht geladen werden.", variant: "destructive" });
+            toast("Fehler beim Export: Daten konnten nicht geladen werden.", 'error');
         }
         setLoading(false);
     };
