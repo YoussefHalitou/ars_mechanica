@@ -1,0 +1,893 @@
+
+Application Overview: "Land in Sicht" - Project Management System
+This is a comprehensive German-language project management and logistics platform for a moving and relocation services company. The workflow spans multiple stages from initial planning to final cost calculation.
+
+Main Workflow Phases
+Phase 1: Pre-Planning (Prä - MorningPlan / Kalender - page7)
+Purpose: Schedule and prepare upcoming projects
+Key Activities:
+1. Project Creation & Management
+    * Create new projects with customer details (name, address, contact)
+    * Assign service types (Umzug/Moving, Entrümpelung/Clearance, Transport)
+    * Set project dates (single-day or multi-day projects)
+    * Store project times and notes
+2. Customer Integration
+    * Integration with Lexware accounting system
+    * Load and sync customer contacts from Lexware API
+    * Create new Lexware contacts directly from projects
+    * Maintain customer database for billing
+3. Visual Planning
+    * Calendar view showing all scheduled projects
+    * Filter projects by date range
+    * Color-coded by service type (green for moves, yellow for clearances)
+Data Flow:
+* Projects stored in t_projects table
+* Calendar events generated from project dates
+* Multi-day projects automatically expanded into daily entries
+* Lexware contacts cached in t_lexware_contacts_full
+
+Phase 2: Daily Planning (Inter - MorningPlan - page8)
+Purpose: Create detailed daily work plans and team assignments
+Key Activities:
+1. Daily Plan Creation
+    * View all projects scheduled for selected date
+    * Create "plans" (Einsätze) linking projects to vehicles and teams
+    * Assign start times, vehicles (L4U, L4N, L Khalid, L Caddy, L Olaf, L Star)
+    * Add plan-specific notes
+2. Team Assignment
+    * For each plan, assign team members from employee catalog
+    * Employees categorized as "Intern" or "Frei/Khalid" (freelance)
+    * Set individual start times per team member
+    * Add member-specific notes
+3. Vehicle Management
+    * Track daily vehicle status for 6 vehicles
+    * Record vehicle information and availability
+    * Reorderable vehicle list with custom daily sorting
+    * Persist vehicle order preferences per date
+4. Employee Notes System
+    * Separate note sections for internal and external employees
+    * Daily notes linked to employees and dates
+    * Reorderable note lists with drag-and-drop
+    * Notes stored in t_employee_daily_notes
+5. Morning Plan Export
+    * Generate comprehensive HTML/PDF morning plan
+    * Includes all cards (projects), teams, vehicles, and employee notes
+    * Uses templating system to format data for printing/distribution
+Data Flow:
+* Plans stored in t_morningplan table (plan_id → project_id → vehicle → notes)
+* Team assignments in t_morningplan_staff (staff linked to plan_id)
+* Vehicle status in t_vehicle_daily_status (one row per vehicle per day)
+* Employee notes in t_employee_daily_notes (linked to employee_code + date)
+
+Phase 3: Post-Planning / Completion (Post - MorningPlan - page11)
+Purpose: Record actual work performed and time tracking
+Key Activities:
+1. Time Pair Recording
+    * For each team member on each project, record time pairs:
+        * LiS times (Land in Sicht company times): When employee worked
+        * Customer times: Billable time at customer location
+        * Break minutes
+    * Calculate total hours (LiS vs. Customer hours)
+    * Time pairs automatically created based on morning plan staff assignments
+2. Work Assignments Management
+    * Create standalone work assignments (work not tied to specific projects)
+    * Track work types, employees, dates, times, hours
+    * Used for administrative work, maintenance, or non-project tasks
+3. Project Cards Display
+    * Similar card-based view as inter-morning plan
+    * Shows completed projects with their teams
+    * Editable time entries for each team member
+Data Flow:
+* Time pairs stored in t_time_pairs table
+    * Linked by project_id and mitarbeiter (employee name)
+    * Contains lis_von, lis_bis, kunde_von, kunde_bis, pause_min
+    * Calculated fields: ges_lis_h, ges_kd_h (total hours)
+* Work assignments in t_work_assignments (separate from projects)
+
+Phase 4: Cost Calculation (Nachkalkulation - Nachkalkulation page)
+Purpose: Calculate actual project costs vs. revenue
+Key Activities:
+1. Project Selection
+    * Select a completed project for cost analysis
+    * View project details and customer information
+2. Cost Categories
+    * Personnel Costs (Personal): Employee time × hourly rates from time pairs
+    * Material Costs (Material): Materials used on project from material catalog
+    * Vehicle Costs (Fahrzeuge): Vehicle usage costs
+    * Service Costs (Services): External services contracted for project
+    * Other Costs (Kosten): Miscellaneous expenses
+3. Revenue Tracking
+    * Revenue Items (Erlöse): Line items billed to customer
+    * Can be based on service catalog or custom items
+4. Financial Calculations
+    * Total costs aggregation across all categories
+    * Total revenue calculation
+    * Margin calculation: Marge = Revenue - Costs
+    * Margin percentage: (Revenue - Costs) / Revenue × 100%
+    * Generate financial report/calculation document
+Data Flow:
+* Project costs pulled from multiple sources:
+    * Time pairs → personnel costs
+    * t_project_materials → material costs
+    * t_project_vehicle_costs → vehicle costs
+    * t_project_service_usage → service costs
+* Revenue from t_project_revenue_items
+* Calculations performed by transformers (tr_kosten_gesamt_total, tr_erloes_gesamt_total, tr_marge_euro, tr_marge_prozent)
+
+Supporting Catalogs
+1. Employee Catalog (Mitarbeiterkatalog)
+* Manage employee master data
+* Employee codes, names, contract types (Intern/Frei)
+* Hourly rates, roles, active status
+* Used for team assignments and cost calculations
+2. Material Catalog (Materialkatalog)
+* Materials and supplies inventory
+* Material costs, pricing
+* Link materials to projects for cost tracking
+3. Service Catalog (Leistungskatalog)
+* Services offered by company
+* Service prices from different suppliers
+* Used for project planning and revenue items
+
+Key Technical Patterns
+1. Date-Based Filtering: Most pages filter by selected date
+2. Automatic Queries: Many queries run automatically on date changes
+3. Manual Saves: Changes require explicit save actions (buttons)
+4. State Management: Extensive use of State variables for caching data per date
+5. Transformer Calculations: Real-time calculations using transformers
+6. Modal Workflows: Forms in modals/drawers for creating/editing records
+7. Reorderable Lists: Drag-and-drop functionality for notes and vehicles
+8. Bulk Operations: Bulk insert/update operations for time pairs and vehicle status
+
+Data Integration Points
+* Lexware API: Customer contact synchronization
+* PDF Generation: Morning plan and calculation reports via external service
+* PostgreSQL: Main data storage across multiple related tables
+* Relational Links: Projects → Plans → Teams → Time Pairs → Cost Calculation
+This workflow enables the company to manage the complete lifecycle of moving/logistics projects from initial customer contact through execution to final financial analysis.
+
+
+Now I'll provide a precise, query-level and table-level breakdown of the workflow:
+
+Detailed Workflow with Queries & Tables
+Phase 1: Pre-Planning (Prä-MorningPlan / Kalender - page7)
+Data Loading & Display
+Projects List Table (tbl_projects)
+* Query: Q_projects_list → lib/Q_projects_list.sql
+* Table: t_projects
+* Filters:
+    * Search by name/location/project_code via inp_search.value
+    * Service type filter via sel_services_filter.value
+    * Date range filter via dateRange_project_filter.value
+* Returns: project_id, project_code, customer details (anrede, name, strasse, nr, plz, ort, telefon, email), status, dienstleistungen, project_date, project_start_date, project_end_date, project_time, offer_type, notes
+* Limit: 50 rows
+* Sort: project_date ASC
+Calendar View (calendar_projects)
+* Query: Q_projects_calendar → lib/Q_projects_calendar.sql
+* Table: t_projects
+* Filter: Only single-day projects (project_date IS NOT NULL, project_start/end_date IS NULL)
+* Returns: Same project fields plus unique_event_id ('S-' || project_id)
+* Purpose: Display projects in calendar visualization
+Lexware Contacts Table (tbl_lexware_contacts)
+* Query: Q_get_lexware_contacts_full → lib/Q_get_lexware_contacts_full.sql
+* Table: lexware_contacts_full
+* Trigger: Manual only (button: btn_load_all_contacts)
+* Returns: All customer contact fields (salutation, first_name, last_name, company_name, emails, phones, addresses, customer_number, raw_json)
+* Limit: 100 rows
+* Sort: customer_number DESC, last_name, first_name
+Project CRUD Operations
+Create Project
+* Query: Q_save_new_project → lib/Q_save_new_project.js (JavaScript wrapper)
+* Underlying Query: Q_project_insert (RetoolTableQuery)
+* Table: t_projects (INSERT)
+* Data Sources: Modal inputs (modal_new_project): sel_anrede_new, inp_name_new, inp_strasse_new, inp_nr_new, inp_plz_new, inp_ort_new, inp_tel_new, inp_email_new, inp_notes_new, sel_services_new, date_project_start_new, date_project_end_new, chk_multiday_new, sel_offer_type_new
+* Transformers:
+    * tr_formatted_project_time - formats project time
+    * tr_formatted_project_date - formats project date
+* Success Handler: Triggers Q_projects_list to refresh
+Update Project
+* Query: Q_project_update_sql (RetoolTableQuery)
+* Table: t_projects (UPDATE WHERE project_id = selected row)
+* Data Sources: Modal inputs (modal_edit_project): sel_anrede, inp_name, inp_strasse, inp_nr, inp_plz, inp_ort, inp_tel, inp_email, inp_notes, sel_services_edit, date_project_edit, date_project_start_edit, date_project_end_edit, chk_multiday_edit, sel_offer_type_edit
+* Transformer: tr_cleaned_project_time - cleans/formats project time
+* Success Handler: Refreshes Q_projects_list
+Delete Project
+* Query: Q_project_delete (RetoolTableQuery)
+* Table: t_projects (DELETE WHERE project_id = selected row)
+* Trigger: Table row action on tbl_projects
+* Success Handler: Refreshes Q_projects_list
+Lexware Integration
+Fetch All Contacts from API
+* Query: fetchAllLexwareContacts → lib/fetchAllLexwareContacts.js
+* API: Lexware REST API (paginated requests)
+* Token: Stored in varLexwareToken state
+* Returns: Array of contact objects from Lexware
+Upsert Contacts to Database
+* Query: Q_upsert_lexware_contacts_full → lib/Q_upsert_lexware_contacts_full.js
+* Table: lexware_contacts_full (BULK UPSERT)
+* Input: Data from fetchAllLexwareContacts.data
+* Success Handler: Triggers Q_get_lexware_contacts_full to reload table
+Create Lexware Contact from Project
+* Query Chain:
+    1. createLexwareContactFromProject → lib/createLexwareContactFromProject.js
+    2. wrapCreateLexwareContact → lib/wrapCreateLexwareContact.js
+    3. createLexwareContactAPI (RESTQuery POST to Lexware)
+* API Endpoint: /v1/contacts
+* Payload: Built from selected project row in tbl_projects
+* Trigger: Button btn_lexware_contact
+Multi-Day Project Expansion
+Query Multi-Day Projects
+* Query: Q_get_multiday_projects → lib/Q_get_multiday_projects.sql
+* Table: t_projects (WHERE project_start_date IS NOT NULL AND project_end_date IS NOT NULL)
+* Returns: Projects needing daily row expansion
+Expand to Daily Rows
+* Query: Q_create_daily_project_rows → lib/Q_create_daily_project_rows.js
+* Logic: For each multi-day project, insert daily rows into t_projects
+* Insert Query: Q_insert_single_daily_row (RetoolTableQuery)
+* Table: t_projects (INSERT multiple rows, one per day)
+* State Variables: Uses temp_expand_* states to pass project data
+
+Phase 2: Daily Planning (Inter-MorningPlan - page8)
+Core Data Loading
+Daily Plans Table (tbl_plan)
+* Query: Q_plan_for_day → lib/Q_plan_for_day.sql
+* Tables:
+    * t_morningplan (mp) - main plans
+    * t_projects (p) - LEFT JOIN for project details
+    * t_vehicles (v) - LEFT JOIN for vehicle info
+* Filter: mp.plan_date = date_morningplan.value
+* Returns: plan_id, plan_date, start_time, service_type, notes, vehicle_name, project details (project_id, project_code, name, location, etc.)
+* Sort: start_time, project name
+Employee Lists
+* Query: Q_employees_list → lib/Q_employees_list.sql
+* Table: t_employees
+* Filter: is_active = true
+* Returns: employee_id, name, role, hourly_rate
+* Used for: Dropdowns in team assignment modals
+Vehicles List
+* Query: Q_vehicles_list → lib/Q_vehicles_list.sql
+* Table: t_vehicles
+* Returns: vehicle_id, nickname, inhalt (contents)
+* Used for: Vehicle selection dropdowns
+Projects for Date
+* Query: Q_projects_list_page8 → lib/Q_projects_list_page8.sql
+* Table: t_projects
+* Filter: By selected date
+* Used for: Project selection in plan creation modal
+Plan CRUD Operations
+Create Plan
+* Query: Q_plan_insert → lib/Q_plan_insert.sql
+* Table: t_morningplan (INSERT)
+* Modal: modal_new_plan
+* Fields: plan_date, project_id, start_time, service_type, vehicle_id, vehicle_names, notes
+* Success Handler: Refreshes Q_plan_for_day
+Update Plan
+* Query: Q_plan_update → lib/Q_plan_update.sql
+* Table: t_morningplan (UPDATE WHERE plan_id = selected)
+* Modal: modal_edit_plan
+* Success Handler: Refreshes Q_plan_for_day
+Delete Plan
+* Query: Q_plan_delete (RetoolTableQuery)
+* Table: t_morningplan (DELETE WHERE plan_id = selected)
+* Trigger: Table row action on tbl_plan
+* Success Handler: Refreshes Q_plan_for_day
+Team Assignment
+Load Team for Selected Plan
+* Query: Q_plan_staff → lib/Q_plan_staff.sql
+* Table: t_morningplan_staff (likely JOIN with t_employees)
+* Filter: plan_id = selected plan
+* Trigger: Button btn_team click
+* Opens: modal_team
+Load Team by Day (All Plans)
+* Query: Q_plan_staff_by_day → lib/Q_plan_staff_by_day.sql
+* Tables:
+    * t_morningplan (mp)
+    * t_morningplan_staff (s) - LEFT JOIN
+    * t_employees (e) - LEFT JOIN
+* Filter: mp.plan_date = date_morningplan.value
+* Returns: plan_id, staff_id, employee_name, role, individual_start_time, member_notes, sort_order
+* Sort: plan_id, sort_order, employee name
+Insert Team Member
+* Query: Q_plan_staff_insert → lib/Q_plan_staff_insert.sql
+* Table: t_morningplan_staff (INSERT)
+* Fields: plan_id, employee_id, individual_start_time, member_notes, sort_order
+* Success Handler:
+    1. Triggers Q_create_time_pairs_for_staff (automatically creates time pair entries)
+    2. Refreshes Q_plan_staff
+Update Team Member
+* Query: Q_update_team_member (RetoolTableQuery)
+* Table: t_morningplan_staff (UPDATE WHERE id = staff_id)
+* Fields: individual_start_time, member_notes
+* Alternatively: Q_save_single_team_member for bulk updates
+Delete Team Member
+* Query: Q_plan_staff_delete (RetoolTableQuery) OR Q_delete_staff_by_id
+* Table: t_morningplan_staff (DELETE WHERE id = staff_id)
+* State: varDeleteStaffId holds the ID to delete
+Save Card Teams (Bulk)
+* Queries (7 JavaScript queries, one per card):
+    * js_save_card1_team → lib/js_save_card1_team.js
+    * js_save_card2_team → lib/js_save_card2_team.js
+    * js_save_card3_team through js_save_card7_team
+* Alternative with Inserts: js_save_card1_team_with_inserts (supports adding new members)
+* Table Operations: Updates to t_morningplan_staff via wrapper queries
+Employee Notes Management
+Load Internal Employee Notes
+* Query: Q_employees_intern_by_date → lib/Q_employees_intern_by_date.sql
+* Tables:
+    * t_employees (e)
+    * t_employee_daily_notes (edn) - LEFT JOIN on employee_code + plan_date
+    * t_morningplan_staff + t_morningplan - subquery for start times
+* Filter: contract_type = 'Intern', plan_date = date_morningplan.value
+* Returns: employee_code, name, notizen (notes), note_id, sort_order, start_times (aggregated)
+* Transformer: tr_employees_intern_aggregated → lib/tr_employees_intern_aggregated.js
+* Display Table: table7
+Load External Employee Notes
+* Query: Q_employees_frei_khalid_by_date → lib/Q_employees_frei_khalid_by_date.sql
+* Tables: Same as intern query
+* Filter: contract_type = 'Extern'
+* Display Table: table8
+Insert/Update Employee Note (Internal)
+* Query: Q_insert_or_update_note_intern → lib/Q_insert_or_update_note_intern.sql
+* Table: t_employee_daily_notes (UPSERT by employee_code + plan_date)
+* Fields: employee_code, plan_date, notizen (note text), sort_order
+* Trigger: Save button on table7 OR btn_add_note_intern
+* Modal: modal_add_intern_note
+Insert/Update Employee Note (External)
+* Query: Q_insert_or_update_note_frei → lib/Q_insert_or_update_note_frei.sql
+* Table: t_employee_daily_notes
+* Trigger: Save button on table8 OR btn_add_note_extern
+* Modal: modal_add_extern_note
+Delete Employee Note
+* Query: Q_delete_note_intern OR Q_delete_note_frei (RetoolTableQuery)
+* Table: t_employee_daily_notes (DELETE WHERE id = note_id)
+* Trigger: Row action on table7 or table8
+Reorder Employee Notes
+* Queries:
+    * Q_swap_notes_intern → lib/Q_swap_notes_intern.js
+    * Q_swap_notes_extern → lib/Q_swap_notes_extern.js
+    * Q_swap_note_sort_order → lib/Q_swap_note_sort_order.sql
+* Table: t_employee_daily_notes (UPDATE sort_order)
+* State Variables:
+    * varTableDataIntern - cached note order for internal employees
+    * varTableDataExtern - cached note order for external employees
+    * varInternNotesByDate - note order map by date
+    * varExternNotesByDate - note order map by date
+Vehicle Status Management
+Load Vehicle Status for Day
+* Query: Q_vehicle_daily_status → lib/Q_vehicle_daily_status.sql
+* Table: t_vehicle_daily_status
+* Filter: plan_date = date_morningplan.value
+* Returns: id, vehicle_name, status, informationen, plan_date
+* Default Query: Q_default_vehicles → lib/Q_default_vehicles.sql (gets vehicle list from t_vehicles)
+* Transformer: tr_vehicle_daily_status_with_defaults merges actual status with defaults
+Save Vehicle Status (Bulk)
+* Query: Q_upsert_all_vehicles → lib/Q_upsert_all_vehicles.sql
+* Table: t_vehicle_daily_status (BULK UPSERT by vehicle_name + plan_date)
+* Records: Array of 6 vehicles with status and informationen from inputs:
+    * inputStatusL4U, taInfoL4U
+    * inputStatusL4N, taInfoL4N
+    * inputStatusLKhalid, taInfoLKhalid
+    * inputStatusLCaddy, taInfoLCaddy
+    * inputStatusLOlaf, taInfoLOlaf
+    * inputStatusLStar, taInfoLStar
+* Alternative: Q_vehicle_status_bulk_upsert (JavaScript wrapper)
+Vehicle Order Management
+* Load Order: Q_load_vehicle_order → lib/Q_load_vehicle_order.sql
+    * Table: t_vehicle_order_by_date
+    * Filter: plan_date = date_morningplan.value
+    * Returns: vehicle_order (JSON array of vehicle names)
+* Save Order: Q_save_vehicle_order (RetoolTableQuery)
+    * Table: t_vehicle_order_by_date (UPDATE_OR_INSERT_BY plan_date)
+    * Data: vehicleOrder.value state variable
+* State Variables:
+    * vehicleOrder - current order for selected date
+    * varVehicleOrderByDate - map of orders by date
+    * varVehicleOrderCached - cached orders
+Morning Plan Export
+Generate Morning Plan HTML/PDF
+* Query Chain:
+    1. Prepare Data: js_prepare_full_morning_plan → lib/js_prepare_full_morning_plan.js
+        * Reads from: Q_plan_for_day.data, Q_plan_staff_by_day.data, Q_employees_intern_by_date.data, Q_employees_frei_khalid_by_date.data, Q_vehicle_daily_status.data
+        * Returns: Structured data object with cards array
+    2. Generate HTML: js_generate_html_morning_plan → lib/js_generate_html_morning_plan.js OR js_generate_html_morning_plan2
+        * Transforms data into HTML string
+* Buttons:
+    1. btnDownloadMorningPlanPDF - Download as HTML
+    2. btnExportMorningPlanHTML - Download as PDF (via external service)
+* PDF Service: q_md_to_docx (RESTQuery to pdf test resource)
+Auto-Initialization on Date Change
+* Event Handler: date_morningplan onChange
+* Triggers in Parallel:
+    * Q_plan_for_day.trigger()
+    * Q_plan_staff_by_day.trigger()
+    * Q_employees_intern_by_date.trigger()
+    * Q_employees_frei_khalid_by_date.trigger()
+    * Q_vehicle_daily_status.trigger()
+* Also Sets: Vehicle order and reorderable note defaults
+Page Initialization
+* Query: js_init_page8_data → lib/js_init_page8_data.js
+* Trigger: On page focus OR after Q_default_vehicles success
+* Purpose: Loads all initial data for the page
+
+Phase 3: Post-Planning / Completion (Post-MorningPlan - page11)
+Core Data Loading
+Daily Plans Table (Read-Only View)
+* Query: Q_plan_for_day2 → lib/Q_plan_for_day2.sql
+* Same structure as Q_plan_for_day
+* Display Table: tbl_plan_post
+* Purpose: Show completed plans for the day
+Team by Day (Post)
+* Query: Q_plan_staff_by_day_post → lib/Q_plan_staff_by_day_post.sql
+* Same structure as Q_plan_staff_by_day
+* Used for: Populating card team tables in post view
+Time Pairs Management
+Load Time Pairs for Date
+* Query: Q_time_pairs_by_date_post → lib/Q_time_pairs_by_date_post.sql
+* Table: t_time_pairs
+* Filter: datum = date_morningplan3.value
+* Returns: pair_id, project_id, datum, mitarbeiter, lis_von, lis_bis, kunde_von, kunde_bis, pause_min, ges_lis_h (total LiS hours), ges_kd_h (total customer hours)
+* Sort: mitarbeiter, lis_von
+* Display Table: tbl_card_post_all (hidden, used for data feeding)
+Time Pair Calculation Logic (in SQL)
+-- ges_lis_h calculation (pseudo-code from UI):
+(lis_bis - lis_von) in hours - (pause_min / 60)
+
+-- ges_kd_h calculation:
+(kunde_bis - kunde_von) in hours
+Transformer for Card Data
+* Transformer: tr_time_pairs_with_staff_data → lib/tr_time_pairs_with_staff_data.js
+* Purpose: Combines time pairs with staff data for card display
+* Input: Q_time_pairs_by_date_post.data + Q_plan_staff_by_day_post.data
+Save Time Pairs (Bulk)
+* Query: Q_save_time_pairs_bulk → lib/Q_save_time_pairs_bulk.js
+* Underlying Query: Q_time_pairs_bulk_upsert (RetoolTableQuery)
+* Table: t_time_pairs (BULK UPSERT by pair_id)
+* State: varBulkUpsertRecords holds records to upsert
+* Trigger: Save button on card team tables (7 cards)
+* Fields per record: pair_id, project_id, datum, mitarbeiter, lis_von, lis_bis, kunde_von, kunde_bis, pause_min, updated_at
+Add Time Pair
+* Modal: modalAddTimePairPost
+* Query: Creates new time pair via bulk upsert
+* State: stateCard1TeamRows through stateCard7TeamRows (holds team data per card)
+Delete Time Pair
+* Query: js_delete_time_pair → lib/js_delete_time_pair.js
+* Underlying Query: Q_delete_time_pair_by_id (RetoolTableQuery)
+* Table: t_time_pairs (DELETE WHERE pair_id = selected)
+* State: varDeletePairId holds ID to delete
+Auto-Create Time Pairs for Staff
+* Query: Q_create_time_pairs_for_staff → lib/Q_create_time_pairs_for_staff.js
+* Table: t_time_pairs (INSERT)
+* Trigger: After staff insertion in phase 2 (onSuccess of Q_plan_staff_insert)
+* Logic: For each new staff member, create skeleton time pair record
+Load Staff for Time Pair
+* Query: Q_staff_for_time_pair → lib/Q_staff_for_time_pair.sql
+* Tables: t_morningplan_staff + t_employees
+* Purpose: Get team members for a specific plan (for dropdown in time pair entry)
+Work Assignments (Non-Project Work)
+Load Work Assignments
+* Query: Q_work_assignments_list → lib/Q_work_assignments_list.sql
+* Table: t_work_assignments
+* Display Table: tblWorkAssignments
+* Returns: assignment_id, work_type, employee_name, employee_code, assignment_date, start_time, end_time, break_minutes, hours_estimated, status, notes
+Work Assignments Statistics
+* Query: Q_work_assignments_stats → lib/Q_work_assignments_stats.sql
+* Table: t_work_assignments (aggregate query)
+* Returns: Summary statistics (total assignments, hours, etc.)
+Create Work Assignment
+* Modal: modalCreateWorkAssignment
+* Query: Q_insert_work_assignment (RetoolTableQuery)
+* Table: t_work_assignments (INSERT)
+* Fields: work_type, employee_name, assignment_date, start_time, end_time, break_minutes, notes
+* Inputs: selCreateWorkType, selCreateEmployee, dateCreateStartDate, timeCreateStartTime, timeCreateEndTime, numCreateBreakMinutes, txtCreateNotes
+Update Work Assignment
+* Modal: modalEditWorkAssignment
+* Query: Q_update_work_assignment (RetoolTableQuery)
+* Table: t_work_assignments (UPDATE WHERE assignment_id = selected)
+* Fields: work_type, employee_name, employee_code, assignment_date, start_time, end_time, hours_estimated, status, notes
+* Inputs: selEditWorkType, selEditEmployee, selEditProject, dateEditStartDate, timeLisVon, timeLisBis, numEditEstimatedHours, selEditStatus, txtEditNotes
+Delete Work Assignment
+* Query: Q_delete_work_assignment (RetoolTableQuery)
+* Table: t_work_assignments (DELETE WHERE assignment_id = selected)
+* Trigger: Row action on tblWorkAssignments
+Date Change Handler (page11)
+On date_morningplan3 change:
+* Triggers in Parallel:
+    * Q_plan_for_day2.trigger()
+    * Q_plan_staff_by_day_post.trigger()
+    * Q_time_pairs_by_date_post.trigger()
+    * Q_work_assignments_stats.trigger()
+    * Q_work_assignments_list.trigger()
+Page Initialization
+* Query: js_init_page11_data → lib/js_init_page11_data.js
+* Trigger: On page focus
+* Purpose: Loads all initial data for page11
+
+Phase 4: Cost Calculation (Nachkalkulation - Nachkalkulation page)
+Project Selection
+* Select Component: nkProjektID2 (stores selected project_id)
+* All subsequent queries filter by: {{ nkProjektID2.value }}
+Personnel Costs
+Load Time Pairs with Rates
+* Query: Q_time_pairs_with_rates → lib/Q_time_pairs_with_rates.sql
+* Tables:
+    * t_time_pairs (tp)
+    * t_employees (e) - LEFT JOIN on name = mitarbeiter
+* Filter: project_id = nkProjektID2.value AND optionally plan_id
+* Returns: pair_id, project_id, datum, mitarbeiter, rolle (role), lis_stunden (LiS hours), kunden_stunden (customer hours), lis_von/bis times, kunde_von/bis times, satz (hourly rate), kosten (cost = lis_stunden × satz)
+* Display Table: Shows in personnel costs card
+* Transformer: tr_personal_kosten_gesamt calculates total personnel costs
+Material Costs
+Load Project Materials
+* Query: Q_project_materials → lib/Q_project_materials.sql
+* Tables:
+    * t_project_material_usage (u)
+    * t_materials (m) - LEFT JOIN
+    * t_material_prices (p) - LEFT JOIN
+* Filter: project_id = nkProjektID2.value
+* Returns: usage_id, material_id, material_name, unit, category, quantity, cost_per_unit, price_per_unit, total_cost (quantity × cost_per_unit), total_price (quantity × price_per_unit)
+* Display Table: Material costs card
+* Transformer: tr_material_kosten_gesamt sums total costs
+Material CRUD Operations
+* Insert: Q_material_insert (adds material usage to project)
+* Update: Q_material_update (updates quantities/costs)
+* Delete: Q_delete_material_usage (removes material from project)
+* Save Changes: Q_save_material_changes → lib/Q_save_material_changes.js (bulk save)
+Vehicle Costs
+Load Vehicle Costs
+* Query: Q_project_vehicle_costs → lib/Q_project_vehicle_costs.sql
+* Tables:
+    * t_project_vehicle_costs (pvc)
+    * t_vehicles (v) - LEFT JOIN
+* Filter: project_id = nkProjektID2.value
+* Returns: id, vehicle_id, fahrzeug (nickname), usage_type (km/hours), usage_value, kmStd (formatted), cost_per_unit (satz), total_cost (kosten), notes
+* Display Table: Vehicle costs card
+* Transformer: tr_vehicle_kosten_gesamt sums total vehicle costs
+Save Vehicle Costs
+* Query: Q_save_vehicle_changes → lib/Q_save_vehicle_changes.js
+* Table: t_project_vehicle_costs (bulk update)
+Service Costs
+Load All Services (Catalog)
+* Query: Q_all_services → lib/Q_all_services.sql
+* Table: t_services (master service catalog)
+* Returns: Service list for selection
+Load Service Suppliers
+* Query: Q_all_service_suppliers → lib/Q_all_service_suppliers.sql
+* Table: t_service_suppliers
+* Returns: Supplier list
+Load Service Prices
+* Query: Q_service_prices_for_selection → lib/Q_service_prices_for_selection.sql
+* Table: t_service_prices
+* Filter: By selected service and supplier
+* Returns: Pricing for service from specific supplier
+Load Project Service Usage
+* Query: Q_project_service_usage → lib/Q_project_service_usage.sql
+* Table: t_project_service_usage
+* Filter: project_id = nkProjektID2.value
+* Returns: Services assigned to project
+Get Project Services (Alternative)
+* Query: Q_project_services → lib/Q_project_services.sql
+* Table: t_project_revenue_items
+* Filter: project_id = nkProjektID2.value AND kind = 'service'
+* Returns: Services as revenue items with customer prices
+Insert Service to Project
+* Query: Q_insert_service_to_project → lib/Q_insert_service_to_project.js
+* Table: t_project_service_usage (INSERT)
+Delete Service from Project
+* Query: Q_delete_service_from_project → lib/Q_delete_service_from_project.js
+* Table: t_project_service_usage (DELETE)
+Calculate Service Costs
+* Query: Q_project_service_costs → lib/Q_project_service_costs.sql
+* Table: t_project_service_usage with pricing calculations
+* Transformer: tr_service_kosten_gesamt sums service costs
+Revenue Items
+Load Revenue Items
+* Query: Q_project_revenue_items → lib/Q_project_revenue_items.sql
+* Table: t_project_revenue_items
+* Filter: project_id = nkProjektID2.value
+* Returns: id, position_label, qty, unit, unit_price, line_total (qty × unit_price), kind, source_inspection_id, sort_order, notes
+* Sort: sort_order, created_at
+* Display Table: Revenue items card
+* Transformer: tr_revenue_items_gesamt sums line_total
+Inspection-Based Revenue Items
+* Query: Q_inspection_calc_items_for_erloes → lib/Q_inspection_calc_items_for_erloes.sql
+* Purpose: Load revenue items from inspection/calculation module
+* Transformer: tr_erloes_gesamt calculates total revenue
+Update Revenue Items (Bulk)
+
+* Query: Q_update_revenue_item_bulk → lib/Q_update_revenue_item_bulk.sql
+* Table: t_project_revenue_items (UPDATE WHERE id = item id)
+* Fields: position_label, qty, unit, unit_price, line_total, notes, updated_at
+* Trigger: Save button on revenue items table
+Save Revenue Changes
+* Query: Q_save_revenue_changes → lib/Q_save_revenue_changes.js
+* Table: t_project_revenue_items (bulk update wrapper)
+* Purpose: Process all changeset rows from revenue table
+Project Context
+Load Selected Project Details
+* Query: Q_get_project_by_id → lib/Q_get_project_by_id.sql
+* Table: t_projects
+* Filter: project_id = nkProjektID2.value
+* Returns: All project fields (used for header display in Nachkalkulation)
+* Transformer: tr_current_project → lib/tr_current_project.js
+* Purpose: Display project info (name, address, etc.) at top of cost calculation
+Cost & Revenue Calculations (Transformers)
+Personnel Costs Total
+* Transformer: tr_personal_kosten_gesamt → lib/tr_personal_kosten_gesamt.js
+* Input: Q_time_pairs_with_rates.data
+* Calculation: SUM(kosten) = SUM(lis_stunden × hourly_rate)
+Material Costs Total
+* Transformer: tr_material_kosten_gesamt → lib/tr_material_kosten_gesamt.js
+* Input: Q_project_materials.data
+* Calculation: SUM(total_cost) = SUM(quantity × cost_per_unit)
+Material Revenue Total
+* Transformer: tr_material_erloes_gesamt → lib/tr_material_erloes_gesamt.js
+* Input: Q_project_materials.data
+* Calculation: SUM(total_price) = SUM(quantity × price_per_unit)
+Vehicle Costs Total
+* Transformer: tr_vehicle_kosten_gesamt → lib/tr_vehicle_kosten_gesamt.js
+* Input: Q_project_vehicle_costs.data
+* Calculation: SUM(total_cost)
+Service Costs Total
+* Transformer: tr_service_kosten_gesamt → lib/tr_service_kosten_gesamt.js
+* Input: Q_project_service_costs.data
+* Calculation: SUM(cost)
+Inspection Revenue Total
+* Transformer: tr_erloes_gesamt → lib/tr_erloes_gesamt.js
+* Input: Q_inspection_calc_items_for_erloes.data
+* Calculation: SUM(line_total) from inspection items
+Revenue Items Total
+* Transformer: tr_revenue_items_gesamt → lib/tr_revenue_items_gesamt.js
+* Input: Q_project_revenue_items.data
+* Calculation: SUM(line_total)
+Total Costs
+* Transformer: tr_kosten_gesamt_total → lib/tr_kosten_gesamt_total.js
+* Formula: personalKosten + materialKosten + vehicleKosten + serviceKosten
+* Inputs:
+    * tr_personal_kosten_gesamt.value
+    * tr_material_kosten_gesamt.value
+    * tr_vehicle_kosten_gesamt.value
+    * tr_service_kosten_gesamt.value
+Total Revenue
+* Transformer: tr_erloes_gesamt_total → lib/tr_erloes_gesamt_total.js
+* Formula: inspectionErloes + materialErloes + revenueItemsErloes
+* Inputs:
+    * tr_erloes_gesamt.value
+    * tr_material_erloes_gesamt.value
+    * tr_revenue_items_gesamt.value
+Margin (Euro)
+* Transformer: tr_marge_euro → lib/tr_marge_euro.js
+* Formula: Revenue - Costs
+* Inputs:
+    * tr_erloes_gesamt_total.value
+    * tr_kosten_gesamt_total.value
+Margin (Percentage)
+* Transformer: tr_marge_prozent → lib/tr_marge_prozent.js
+* Formula: (Revenue - Costs) / Revenue
+* Inputs:
+    * tr_erloes_gesamt_total.value
+    * tr_kosten_gesamt_total.value
+* Returns: Decimal (e.g., 0.4893 for 48.93%)
+* Note: UI component multiplies by 100 for display
+Consolidated Costs View
+All Costs Consolidated
+* Transformer: tr_all_costs_consolidated → lib/tr_all_costs_consolidated.js
+* Purpose: Merge all cost sources into single unified table
+* Inputs:
+    * Q_time_pairs_with_rates.data → Personnel
+    * Q_project_vehicle_costs.data → Vehicles
+    * Q_project_materials.data → Materials
+    * Q_project_service_costs.data → Services
+* Returns: Array of objects with standardized fields:
+    * source_id (unique ID per row)
+    * kostenart (cost type: Personal/Fahrzeuge/Material/Services)
+    * beschreibung (description)
+    * details (additional details)
+    * menge (quantity)
+    * einheit (unit)
+    * einzelpreis (unit price)
+    * gesamtkosten (total cost)
+Calculation Report Export
+Generate Calculation HTML
+* Query: js_generate_calculation_html → lib/js_generate_calculation_html.js
+* Purpose: Create comprehensive HTML report of entire cost calculation
+* Data Sources:
+    * Project info from tr_current_project.value
+    * Personnel from Q_time_pairs_with_rates.data
+    * Vehicles from Q_project_vehicle_costs.data
+    * Materials from Q_project_materials.data
+    * Services from Q_project_service_costs.data
+    * Inspection revenue from Q_inspection_calc_items_for_erloes.data
+    * Revenue items from Q_project_revenue_items.data
+    * All totals from transformers
+* Output: Full HTML document with:
+    * Project header info
+    * KPI row (Total Costs, Total Revenue, Margin €, Margin %)
+    * Section 1: Personnel costs table
+    * Section 2: Vehicle costs table
+    * Section 3: Material costs table (both cost & price)
+    * Section 4: Service costs table
+    * Section 5: Inspection revenue items
+    * Section 6: Manual revenue items
+    * Section 7: Summary
+* Trigger: Export button (downloads HTML file)
+
+Supporting Catalogs (Detailed Queries)
+Employee Catalog (Mitarbeiterkatalog)
+Load Employees List
+* Query: Q_employees_list → lib/Q_employees_list.sql
+* Table: t_employees
+* Filter: is_active = true
+* Returns: employee_id, name, role, hourly_rate
+* Sort: name
+* Used by: Multiple pages for team selection dropdowns
+Employees List (Nachkalkulation-specific)
+* Query: Q_employees_list_nk → lib/Q_employees_list_nk.sql
+* Table: t_employees
+* Purpose: Employee list for cost calculation page with additional fields
+Employees List (Page 11 - Post)
+* Query: Q_employees_list_page11 → lib/Q_employees_list_page11.sql
+* Table: t_employees
+* Purpose: Employee list specific to Post-MorningPlan page
+Insert Employee (Page 8)
+* Query: insertEmployeeQuery_page8 → lib/insertEmployeeQuery_page8.js
+* Underlying: insertEmployeeQuery_page8_sql (RetoolTableQuery)
+* Table: t_employees (INSERT)
+* Modal: addEmployeeModal_page8
+* Fields: employee_code, name, email, phone, role, contract_type, hourly_rate, weekly_hours_contract, is_active, notes
+Material Catalog (Materialkatalog)
+Load Materials List
+* Query: Q_materials_list → lib/Q_materials_list.sql
+* Tables:
+    * t_materials (m)
+    * t_material_prices (p) - LEFT JOIN
+* Returns: material_id (MaterialID), name (ItemName), unit (DefaultUnit), default_quantity, cost_per_unit, price_per_unit, currency, category, is_active, created_at, updated_at
+* Sort: material_id ASC
+* Display: Main materials catalog table
+All Active Materials (for Dropdowns)
+* Query: Q_all_materials → lib/Q_all_materials.sql
+* Tables:
+    * t_materials (m)
+    * t_material_prices (p) - LEFT JOIN
+* Filter: is_active = true
+* Returns: material_id, name, unit, category, price_per_unit
+* Sort: name
+* Purpose: Populate material selection dropdowns
+Insert Material
+* Query: Q_material_insert → lib/Q_material_insert.js
+* Table: t_materials (INSERT)
+* Modal: frm_mat_new
+* Fields: name, unit, default_quantity, category, is_active
+Update Material
+* Query: Q_material_update → lib/Q_material_update.js
+* Table: t_materials (UPDATE)
+* Modal: frm_mat_edit
+Clear Material Form
+* Query: clearMaterialForm → lib/clearMaterialForm.js
+* Purpose: Reset material form inputs after save
+Add Material to Project
+* Query: addMaterialQuery → lib/addMaterialQuery.js
+* Table: t_project_material_usage (INSERT)
+* Purpose: Add material usage entry to project
+Service Catalog (Leistungskatalog)
+Load Services List
+* Query: Q_services_list → lib/Q_services_list.sql
+* Tables:
+    * t_services (s)
+    * t_service_prices (p) - LEFT JOIN on service_id
+* Returns: service_id (ServiceID), name (ServiceName), default_unit (DefaultUnit), category, price_id (PriceID), supplier, unit, cost_per_unit, customer_price_per_unit
+* Sort: service_id, supplier
+* Display: Services catalog with pricing by supplier
+Simple Services List
+* Query: Q_services_simple → lib/Q_services_simple.sql
+* Table: t_services
+* Purpose: Simpler service list without pricing joins
+All Services (for Dropdowns)
+* Query: Q_all_services → lib/Q_all_services.sql
+* Table: t_services
+* Purpose: Populate service selection dropdowns
+All Service Suppliers
+* Query: Q_all_service_suppliers → lib/Q_all_service_suppliers.sql
+* Table: t_service_suppliers
+* Purpose: Populate supplier selection dropdowns
+Service Prices for Selection
+* Query: Q_service_prices_for_selection → lib/Q_service_prices_for_selection.sql
+* Table: t_service_prices
+* Filter: By selected service_id and supplier_id
+* Purpose: Get pricing details for specific service-supplier combination
+Insert Service
+* Query: Q_service_insert → lib/Q_service_insert.js
+* Table: t_services (INSERT)
+* Modal: frm_srv_new
+Insert Supplier Price
+* Query: Q_supplier_price_insert → lib/Q_supplier_price_insert.js
+* Table: t_service_prices (INSERT)
+* Modal: frm_supplier_price_new
+Save Services Table Changes
+* Query: saveServicesTableChanges → lib/saveServicesTableChanges.js
+* Table: t_services (bulk update)
+* Purpose: Save inline edits from services table
+
+Summary of Key SQL Tables
+Core Tables
+1. t_projects - Projects/Customers
+    * Columns: project_id (PK), project_code, anrede, name, strasse, nr, plz, ort, telefon, email, status, dienstleistungen, project_date, project_start_date, project_end_date, project_time, offer_type, notes, created_at
+2. t_morningplan - Daily Plans
+    * Columns: plan_id (PK), plan_date, project_id (FK), start_time, service_type, vehicle_id (FK), vehicle_names, notes
+    * Relationships: → t_projects, → t_vehicles
+3. t_morningplan_staff - Team Assignments
+    * Columns: id (PK), plan_id (FK), employee_id (FK), individual_start_time, member_notes, sort_order
+    * Relationships: → t_morningplan, → t_employees
+4. t_employees - Employees
+    * Columns: employee_id (PK), employee_code, name, email, phone, role, contract_type (Intern/Extern), hourly_rate, weekly_hours_contract, is_active, notes, created_at, updated_at
+5. t_time_pairs - Employee Time Tracking
+    * Columns: pair_id (PK), project_id (FK), plan_id (FK nullable), datum, mitarbeiter, lis_von, lis_bis, kunde_von, kunde_bis, pause_min, ges_lis_h (calculated), ges_kd_h (calculated), updated_at
+    * Relationships: → t_projects, → t_morningplan (optional)
+6. t_vehicles - Vehicles
+    * Columns: vehicle_id (PK), nickname, inhalt (contents), created_at, updated_at
+7. t_vehicle_daily_status - Daily Vehicle Status
+    * Columns: id (PK), vehicle_name, status, informationen, plan_date
+    * Composite key: (vehicle_name, plan_date)
+8. t_vehicle_order_by_date - Vehicle Display Order
+    * Columns: plan_date (PK), vehicle_order (JSON array), updated_at
+9. t_employee_daily_notes - Employee Daily Notes
+    * Columns: id (PK), employee_code (FK), plan_date, notizen (note text), sort_order
+    * Composite key: (employee_code, plan_date)
+Cost Calculation Tables
+1. t_project_material_usage - Materials Used
+    * Columns: id (PK), project_id (FK), material_id (FK), quantity
+    * Relationships: → t_projects, → t_materials
+2. t_materials - Material Catalog
+    * Columns: material_id (PK), name, unit, default_quantity, category, is_active, created_at, updated_at
+3. t_material_prices - Material Pricing
+    * Columns: price_id (PK), material_id (FK), cost_per_unit, price_per_unit, currency, updated_at
+4. t_project_vehicle_costs - Vehicle Costs per Project
+    * Columns: id (PK), project_id (FK), vehicle_id (FK), usage_type (km/hours), usage_value, cost_per_unit, total_cost, notes, created_at, updated_at
+5. t_project_service_usage - Services Used (deprecated?)
+    * Used for external services contracted for project
+6. t_project_service_costs - Service Costs Detail
+    * Alternative service cost tracking table
+7. t_project_revenue_items - Revenue Items
+    * Columns: id (PK), project_id (FK), position_label, qty, unit, unit_price, line_total, kind (service/material/manual), source_inspection_id, sort_order, notes, created_at, updated_at
+Catalog Tables
+1. t_services - Service Catalog
+    * Columns: service_id (PK), name, default_unit, category, created_at, updated_at
+2. t_service_suppliers - Service Suppliers
+    * Columns: supplier_id (PK), supplier_name, contact_info
+3. t_service_prices - Service Pricing
+    * Columns: price_id (PK), service_id (FK), supplier_id (FK), cost_per_unit, customer_price_per_unit, unit
+4. t_work_assignments - Non-Project Work
+    * Columns: assignment_id (PK), work_type, employee_name, employee_code, assignment_date, start_time, end_time, break_minutes, hours_estimated, status, notes, created_at, updated_at
+Integration Tables
+1. lexware_contacts_full - Lexware Customer Cache
+    * Columns: id (PK), organization_id, version, archived, salutation, first_name, last_name, title, date_of_birth, company_name, company_number, vat_registration_id, customer_number, customer_since, vendor_number, vendor_since, billing/shipping addresses, emails, phones, raw_json
+
+Data Flow Summary
+PROJECT LIFECYCLE:
+
+1. PRE-PLANNING (page7)
+   ├─ Create t_projects → project_id
+   ├─ Sync lexware_contacts_full ← Lexware API
+   └─ View calendar (Q_projects_calendar)
+
+2. DAILY PLANNING (page8)
+   ├─ Create t_morningplan → plan_id (links project_id)
+   ├─ Assign t_morningplan_staff (links plan_id + employee_id)
+   ├─ Set t_vehicle_daily_status (per plan_date)
+   ├─ Add t_employee_daily_notes (per employee + date)
+   ├─ Auto-create t_time_pairs skeleton (via Q_create_time_pairs_for_staff)
+   └─ Export morning plan HTML/PDF
+
+3. POST-PLANNING (page11)
+   ├─ Fill t_time_pairs (LiS times, customer times, breaks)
+   ├─ Create t_work_assignments (non-project work)
+   └─ Calculate hours worked
+
+4. COST CALCULATION (Nachkalkulation)
+   ├─ Personnel: t_time_pairs × t_employees.hourly_rate
+   ├─ Materials: t_project_material_usage × t_material_prices
+   ├─ Vehicles: t_project_vehicle_costs
+   ├─ Services: t_project_service_usage/costs
+   ├─ Revenue: t_project_revenue_items
+   ├─ Calculate margins (transformers)
+   └─ Export calculation report
+This comprehensive breakdown shows exactly which queries hit which tables at each stage of the workflow, including all filters, joins, and data transformations.
